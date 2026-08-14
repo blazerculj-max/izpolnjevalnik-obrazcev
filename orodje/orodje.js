@@ -29,6 +29,10 @@
   let idPodpisaVZajemu = null;
   let odgovoriVrstic = {}; // { idVrstice: "DA" | "NE" }
   let pisavaBajti = null;
+  // Izvožen PDF živi kot blob: naslov, dokler ga ne sprostimo ali dokler se
+  // stran ne zapre. Ker vsebuje podatke stranke, ga počistimo takoj, ko ga
+  // ne rabimo več.
+  let zivijBlobi = [];
 
   const prikaz = document.getElementById("prikaz-obrazca");
   const spustisce = document.getElementById("spustisce");
@@ -161,6 +165,9 @@
   if (prenesiEl && /^https?:$/.test(location.protocol)) {
     prenesiEl.classList.remove("skrit");
   }
+
+  // Ob zapiranju strani za sabo ne pustimo blob naslovov s podatki stranke.
+  window.addEventListener("pagehide", sprostiBlobe);
 
   naloziKazalo();
 
@@ -303,7 +310,8 @@
       </div>
       <div class="obrazec-orodja">
         <button class="gumb-glavni" id="pripravi-pdf">Pripravi PDF</button>
-        <button class="gumb-tih" id="pocisti-obrazec">Počisti polja</button>
+        <button class="gumb-tih" id="pocisti-obrazec"
+          title="Pobriše polja, odgovore, podpise in pripravljen PDF">Počisti vse</button>
         <label class="polje-potrditev" style="padding:0;border:none;background:none">
           <input type="checkbox" id="zakleni" checked />
           <span style="font-size:13px">zakleni polja (za tisk in pošiljanje)</span>
@@ -313,13 +321,7 @@
       <div id="izhod-pdf"></div>`;
 
     document.getElementById("pripravi-pdf").addEventListener("click", pripraviPdf);
-    document.getElementById("pocisti-obrazec").addEventListener("click", () => {
-      document.getElementById("obrazec-polja").reset();
-      odgovoriVrstic = {};
-      document
-        .querySelectorAll(".odgovor-gumb.izbran")
-        .forEach((g) => g.classList.remove("izbran"));
-    });
+    document.getElementById("pocisti-obrazec").addEventListener("click", pocistiVse);
 
     // Klik na DA/NE velja za celo vrstico; ponoven klik odgovor prekliče.
     prikaz.querySelectorAll(".odgovor-gumb[data-vrstica]").forEach((g) =>
@@ -409,8 +411,12 @@
             .join("")}
         </select>${pojasnilo}</div>`;
     }
+    // autocomplete/spellcheck izklopimo na vsakem polju posebej: Safari
+    // nastavitev na obrazcu pogosto ignorira in bi si podatke stranke
+    // zapomnil za samodejno izpolnjevanje.
     return `<div class="polje"><label class="oznaka-polja" for="${id}">${oznaka}</label>
       <input type="text" id="${id}" data-ime="${escapeHtml(p.ime)}" data-tip="TextField"
+        autocomplete="off" autocorrect="off" spellcheck="false"
         ${p.najvec_znakov ? `maxlength="${p.najvec_znakov}"` : ""} />${pojasnilo}</div>`;
   }
 
@@ -545,6 +551,31 @@
 
   // ------------------------------------------------------------- priprava PDF
 
+  function sprostiBlobe() {
+    zivijBlobi.forEach((u) => URL.revokeObjectURL(u));
+    zivijBlobi = [];
+  }
+
+  /** Pobriše vse, kar je vpisala stranka - polja, odgovore, podpise, izvoz. */
+  function pocistiVse() {
+    const obrazec = document.getElementById("obrazec-polja");
+    if (obrazec) obrazec.reset();
+    odgovoriVrstic = {};
+    document
+      .querySelectorAll(".odgovor-gumb.izbran")
+      .forEach((g) => g.classList.remove("izbran"));
+    podpisniPasovi.forEach((p) => {
+      p.slika = null;
+    });
+    sprostiBlobe();
+    const izhod = document.getElementById("izhod-pdf");
+    if (izhod) izhod.innerHTML = "";
+    const stanje = document.getElementById("stanje-obrazca");
+    if (stanje) stanje.textContent = "Počiščeno.";
+    izrisiSeznamPodpisov();
+    izrisiZnakePodpisov();
+  }
+
   async function pripraviPdf() {
     const stanje = document.getElementById("stanje-obrazca");
     const vrednosti = {};
@@ -599,7 +630,9 @@
         pisavaBajti,
       });
 
+      sprostiBlobe(); // prejšnji izvoz ne rabi več viseti v pomnilniku
       const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+      zivijBlobi.push(url);
       const imeDatoteke = odprtObrazec.ime.replace(/\.pdf$/i, "") + "-izpolnjen.pdf";
       document.getElementById("izhod-pdf").innerHTML = `
         <div class="obrazec-orodja">

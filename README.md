@@ -28,6 +28,47 @@ Brez namestitve, brez prijave, brez strežnika, ki bi karkoli obdeloval.
 prebere, izpolni in shrani tvoj brskalnik. Ni strežnika, ki bi kaj videl, ni
 baze in ni beleženja.
 
+To ni le zasnova, ampak pravilo, ki ga uveljavi brskalnik. Stran nosi
+`Content-Security-Policy` z `connect-src 'self'` in `form-action 'none'`,
+kar pomeni, da **ne more** vzpostaviti povezave nikamor razen tja, od koder je
+prišla — in tam stoji statično gostovanje, ki podatkov ne zna sprejeti.
+Preverjeno je, da so blokirani vsi običajni kanali: `fetch`, slika kot
+piksel, `navigator.sendBeacon` in WebSocket.
+
+Kar stran hrani na napravi:
+
+| | |
+|---|---|
+| piškotki | jih ni |
+| `sessionStorage` | prazen |
+| `localStorage` | samo **šifra prodajnika**, če jo vpišeš (tvoj podatek, ne strankin) |
+| podatki stranke | samo v pomnilniku odprtega zavihka |
+
+Polja imajo izklopljena `autocomplete`, `autocorrect` in `spellcheck`, da si
+jih brskalnik ne zapomni za samodejno izpolnjevanje. Gumb **Počisti vse**
+pobriše polja, odgovore, podpise in pripravljen PDF; ta se sprosti tudi ob
+zaprtju zavihka.
+
+### Kje tveganje v resnici ostane
+
+Orodje konča pri izvoženem PDF-ju — od tam naprej je odvisno od tebe:
+
+1. **Pot, po kateri PDF pošlješ.** Navadna e-pošta je najpogostejši način, da
+   podatki stranke pristanejo tam, kamor ne sodijo. Uporabi kanal, ki ga
+   dovoljuje zavarovalnica.
+2. **Kopije na napravi.** Mapa Prenosi, sinhronizacija z iCloud Drive in
+   varnostne kopije. Izvožen PDF po pošiljanju pobriši; varnostne kopije naj
+   bodo šifrirane.
+3. **Sama naprava.** Vklopljen FileVault na Macu in koda na iPadu rešita
+   največ — izgubljena ali ukradena naprava je najverjetnejši incident.
+
+### Preden greš z resnično stranko
+
+Upravljavec osebnih podatkov je zavarovalnica, ne ti. Notranja pravila o
+informacijski varnosti so praviloma strožja od GDPR, zato uporabo tega orodja
+za podatke strank **vnaprej** uskladi s pooblaščeno osebo za varstvo podatkov.
+Zgornji opis je napisan tako, da ga lahko preberejo in ocenijo.
+
 V repozitoriju so samo **prazni uradni obrazci**. Izpolnjenih obrazcev s
 podatki strank sem ne dodajaj — Git pomni vse in izbris jih iz zgodovine ne
 odstrani.

@@ -4,6 +4,28 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Izpolnjevalnik obrazcev</title>
+
+    <!--
+      Pravilo, ki ga uveljavi brskalnik: stran ne sme vzpostaviti nobene
+      povezave izven lastnega izvora. Podatki stranke torej ne morejo odteči,
+      tudi če bi se v kodo kdaj prikradlo kaj nezaželenega - to ni obljuba,
+      ampak omejitev, ki jo lahko vsak preveri v izvorni kodi.
+      `form-action 'none'` pomeni, da obrazca ni mogoče nikamor oddati.
+      Skripte in slogi so vgnezdeni, zato je zanje potreben 'unsafe-inline';
+      pri odtekanju podatkov pa odloča connect-src, ne script-src.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none';
+               script-src 'unsafe-inline';
+               style-src 'unsafe-inline';
+               img-src 'self' data: blob:;
+               object-src blob:;
+               connect-src 'self';
+               form-action 'none';
+               base-uri 'none';"
+    />
+    <meta name="referrer" content="no-referrer" />
     <!--
       To je predloga. Uporabna različica nastane z `npm run orodje`, ki vanjo
       vgradi knjižnice, pisavo in kodo, tako da je datoteka samostojna in
