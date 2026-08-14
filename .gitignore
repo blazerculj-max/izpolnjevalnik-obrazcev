@@ -1,0 +1,8 @@
+node_modules/
+dist/
+public/orodje-obrazci.html
+
+# Nikoli v repozitorij: izpolnjeni obrazci s podatki strank.
+# Git pomni vse - izbris jih iz zgodovine ne odstrani.
+data/izpolnjeni/
+*-izpolnjen.pdf

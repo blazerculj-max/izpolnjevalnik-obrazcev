@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Izpolnjevalnik obrazcev</title>
+    <!--
+      To je predloga. Uporabna različica nastane z `npm run orodje`, ki vanjo
+      vgradi knjižnice, pisavo in kodo, tako da je datoteka samostojna in
+      deluje brez strežnika (odpreš jo z dvoklikom).
+    -->
+    <style>/*{{SLOG}}*/</style>
+  </head>
+  <body class="orodje">
+    <header>
+      <div class="glava-ovoj">
+        <div class="znamka">
+          <div class="logo">O</div>
+          <div>
+            <h1>Izpolnjevalnik obrazcev</h1>
+            <p>Deluje brez interneta in brez strežnika — vse ostane na tej napravi.</p>
+          </div>
+        </div>
+        <div class="glava-gumbi">
+          <!-- Vidno samo na spletni različici: kopija za delo brez povezave. -->
+          <a class="gumb-tih svetel skrit" id="prenesi-orodje" href="index.html"
+             download="Izpolnjevalnik-obrazcev.html">Prenesi za brez povezave</a>
+          <button class="gumb-tih svetel" id="izberi-datoteko">Odpri drug obrazec</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="orodje-ovoj">
+      <!-- Seznam obrazcev se pokaže samo, kadar orodje stoji na spletu in
+           obrazci ležijo poleg njega. -->
+      <section id="kazalo-obrazcev" class="kazalo-obrazcev skrit"></section>
+
+      <div id="spustisce" class="spustisce">
+        <strong>Povleci sem PDF obrazec</strong>
+        <span>ali klikni za izbiro. Obrazec mora biti »aktiven« (z vnosnimi polji).</span>
+        <input type="file" id="vnos-datoteke" accept="application/pdf,.pdf" hidden />
+      </div>
+
+      <section class="vsebina" id="prikaz-obrazca">
+        <p class="prazno">Izberi PDF obrazec zgoraj.</p>
+      </section>
+
+      <p class="namig drobno">
+        Datoteka se ne pošilja nikamor — bere in izpolnjuje jo tvoj brskalnik.
+        Narisan podpis je slika, ne kvalificiran elektronski podpis po eIDAS.
+      </p>
+    </main>
+
+    <!-- Okno za podpis -->
+    <div id="okno-podpisa" class="prekrivalo skrit">
+      <div class="okno">
+        <h3 id="naslov-podpisa">Podpis</h3>
+        <p class="namig" id="namig-podpisa">
+          Na zaslonu na dotik ali s peresom preprosto podpiši. Na sledilni ploščici
+          klikni <strong>Začni risanje</strong> — potem le drsiš s prstom, brez pritiskanja.
+        </p>
+        <div class="platno-ovoj">
+          <canvas id="platno-podpisa" width="640" height="220"></canvas>
+          <span id="znak-izhodisca" class="znak-izhodisca skrit"></span>
+        </div>
+        <div class="okno-gumbi">
+          <button id="zacni-risanje" class="gumb-glavni">Začni risanje</button>
+          <button id="pocisti-podpis" class="gumb-tih">Ponovi</button>
+          <button id="preklici-podpis" class="gumb-tih">Prekliči</button>
+          <button id="shrani-podpis" class="gumb-glavni">Potrdi</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // pdfjs je v zgrajeni datoteki vgrajen kot modul (glej spodaj), delavec
+      // pa teče kar na glavni niti - tako ni potreben noben zunanji vir in
+      // stran deluje tudi, ko je odprta z dvoklikom (file://).
+      window.naloziPdfJs = async () => {
+        if (!window.pdfjsLib) throw new Error("pdf.js ni na voljo.");
+        return window.pdfjsLib;
+      };
+      window.naloziPisavo = async () => window.PISAVA_BAJTI || null;
+    </script>
+
+    <!--{{SKRIPTE}}-->
+  </body>
+</html>
