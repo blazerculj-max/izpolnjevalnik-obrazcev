@@ -185,7 +185,12 @@
           (a.polozaj?.x ?? 0) - (b.polozaj?.x ?? 0)
       );
 
-      return { strani, polja, podpisi, vrstice, izbire };
+      const razdelki =
+        straniBesedila && straniBesedila.length
+          ? logika.najdiRazdelke(straniBesedila, strani)
+          : [];
+
+      return { strani, polja, podpisi, vrstice, izbire, razdelki };
     }
 
     /**

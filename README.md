@@ -20,7 +20,10 @@ Brez namestitve, brez prijave, brez strežnika, ki bi karkoli obdeloval.
 - okenca v isti vrstici obravnava kot **en odgovor**: klikneš DA ali NE enkrat,
   označita pa se okence v stolpcu POTREBE in v stolpcu ZAHTEVE;
 - **podpis** s prstom, peresom ali sledilno ploščico, ki ga povlečeš na pravo
-  mesto na strani;
+  mesto na strani in mu z drsnikom nastaviš velikost;
+- polja **razvrsti po razdelkih obrazca** ("Zavarovalec", "Zavarovanje
+  Operacije") in prikaže navodila, ki jih obrazec zapiše zraven
+  ("izpolniti le, če zavarovalec in zavarovanec nista ista oseba");
 - izvozi PDF z **zaklenjenimi polji**, pripravljen za tisk in pošiljanje;
 - šumniki so pravilni — vgrajena je pisava DejaVu Sans (privzeta pisava PDF
   obrazcev ne pozna črke »č«).

@@ -297,18 +297,43 @@
       })),
     ].sort((a, b) => a.stran - b.stran || a.y - b.y);
 
-    const poStrani = new Map();
-    elementi.forEach((e) => {
-      if (!poStrani.has(e.stran)) poStrani.set(e.stran, []);
-      poStrani.get(e.stran).push(e.html);
-    });
+    const razdelki = shema.razdelki || [];
+    const DOPUST = 2; // %: naslov ob robu je poravnan na sredino svojega bloka
+    // Polja združimo po razdelkih obrazca ("Zavarovalec", "Zavarovanje
+    // Operacije"), ne le po straneh - tako je vidno, kaj spada skupaj in kaj
+    // je treba izpolniti le pogojno.
+    const razdelekZa = (e) => {
+      const kandidati = razdelki.filter(
+        (r) => r.stran === e.stran && r.y <= e.y + DOPUST
+      );
+      return kandidati.length ? kandidati[kandidati.length - 1] : null;
+    };
 
-    const skupine = [...poStrani.entries()]
+    const skupine = [];
+    let tekoca = null;
+    for (const e of elementi) {
+      const r = razdelekZa(e);
+      const kljuc = r ? r.stran + "|" + r.naslov : "stran" + e.stran;
+      if (!tekoca || tekoca.kljuc !== kljuc) {
+        tekoca = {
+          kljuc,
+          naslov: r ? r.naslov : "Stran " + e.stran,
+          opomba: r ? r.opomba : null,
+          stran: e.stran,
+          deli: [],
+        };
+        skupine.push(tekoca);
+      }
+      tekoca.deli.push(e.html);
+    }
+
+    const skupineHtml = skupine
       .map(
-        ([stran, deli]) => `<div class="polja-skupina">
-          <h3>Stran ${stran}</h3>
-          <div class="mreza-polj">${deli.join("")}</div>
-        </div>`
+        (s) => `<div class="polja-skupina">
+            <h3>${escapeHtml(s.naslov)} <span class="stran-oznaka">str. ${s.stran}</span></h3>
+            ${s.opomba ? `<p class="opomba-razdelka">${escapeHtml(s.opomba)}</p>` : ""}
+            <div class="mreza-polj">${s.deli.join("")}</div>
+          </div>`
       )
       .join("");
 
@@ -317,7 +342,7 @@
       <p class="meta">${shema.polja.length} polj · ${shema.strani.length} strani ·
         obdelano v tvojem brskalniku</p>
       <div class="obrazec-postavitev">
-        <form id="obrazec-polja" autocomplete="off">${skupine}</form>
+        <form id="obrazec-polja" autocomplete="off">${skupineHtml}</form>
         <aside class="podpis-plosca">
           <h3>Podpisi</h3>
           <p class="namig" style="margin:0 0 8px">
@@ -500,7 +525,13 @@
                    placeholder="Šifra prodajnika" value="${escapeHtml(p.sifra)}" />`
               : ""
           }
-          <div class="podpis-pas-gumbi">
+          <label class="oznaka-polja velikost-oznaka">
+          Velikost <span data-velikost="${p.id}">${p.sirina}</span> % širine strani
+        </label>
+        <input type="range" class="drsnik-velikosti" min="8" max="45" step="1"
+               value="${p.sirina}" data-sirina="${p.id}"
+               aria-label="Velikost podpisa" />
+        <div class="podpis-pas-gumbi">
             <button type="button" class="gumb-tih majhen" data-zajemi="${p.id}">
               ${p.slika ? "Znova" : "Zajemi podpis"}
             </button>
@@ -521,6 +552,17 @@
       b.addEventListener("click", () => {
         najdiPas(b.dataset.odstrani).slika = null;
         izrisiSeznamPodpisov();
+        izrisiZnakePodpisov();
+      })
+    );
+    // Velikost podpisa: oznako na strani posodobimo sproti, seznama pa NE
+    // izrisujemo znova - drsnik bi med vlečenjem izgubil fokus.
+    ovoj.querySelectorAll("[data-sirina]").forEach((d) =>
+      d.addEventListener("input", () => {
+        const pas = najdiPas(d.dataset.sirina);
+        pas.sirina = Number(d.value);
+        const izpis = ovoj.querySelector(`[data-velikost="${pas.id}"]`);
+        if (izpis) izpis.textContent = pas.sirina;
         izrisiZnakePodpisov();
       })
     );

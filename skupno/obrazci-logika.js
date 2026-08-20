@@ -468,6 +468,70 @@
       .sort((a, b) => a.stran - b.stran || a.y - b.y);
   }
 
+  /**
+   * Razdelki obrazca, kot jih oznanja sam obrazec: naslovi ob levem robu
+   * ("Zavarovalec", "Zavarovanec", "Zavarovanje Operacije", "Vprašalnik o
+   * zdravstvenem stanju"). Skupaj z njimi poberemo navodilo, ki spada zraven
+   * ("izpolniti le, če zavarovalec in zavarovanec nista ista oseba").
+   *
+   * Vrne položaje v odstotkih strani, da jih vmesnik primerja s polji.
+   */
+  function najdiRazdelke(strani, mereStrani) {
+    const izhod = [];
+    strani.forEach((s) => {
+      const mere = mereStrani[s.stran - 1];
+      if (!mere) return;
+
+      // Naslov je ob robu pogosto prelomljen čez več vrstic - vrstice, ki si
+      // tesno sledijo, spadajo skupaj.
+      const bloki = [];
+      s.kosi
+        .filter((k) => k.x < ROB_SEKCIJE)
+        .sort((a, b) => b.y - a.y)
+        .forEach((k) => {
+          const zadnji = bloki[bloki.length - 1];
+          if (zadnji && zadnji.dno - k.y <= 12) {
+            zadnji.deli.push(k.besedilo);
+            zadnji.dno = k.y;
+          } else bloki.push({ vrh: k.y, dno: k.y, deli: [k.besedilo] });
+        });
+
+      for (const b of bloki) {
+        const celo = pocisti(b.deli.join(" "));
+        // Naslov razdelka se začne z veliko črko ali rimsko številko; tako
+        // izpustimo oznake polj ob robu ("kraj in datum") in številko obrazca.
+        if (!/^([IVX]+\.|[A-ZČŠŽ])/.test(celo) || celo.length < 4) continue;
+
+        // Oklepaj je opomba le, kadar je navodilo. Drugod je del naslova
+        // ("Opredelitev vaših (zavarovalčevih) potreb in zahtev").
+        const oklepaj = celo.indexOf("(");
+        const vOklepaju = oklepaj > 0 ? celo.slice(oklepaj).replace(/[()]/g, "") : "";
+        const jeNavodilo = /izpolni|obvezn|le,? *če|velja/i.test(vOklepaju);
+        const naslov = pocisti(jeNavodilo ? celo.slice(0, oklepaj) : celo);
+        let opomba = jeNavodilo ? pocisti(vOklepaju) : null;
+
+        // Navodilo je lahko tudi v telesu strani, ob začetku razdelka.
+        if (!opomba) {
+          const n = s.kosi.find(
+            (k) =>
+              k.x >= ROB_SEKCIJE &&
+              Math.abs(k.y - b.vrh) < 14 &&
+              /^(izpolni|obvezn)/i.test(k.besedilo)
+          );
+          if (n) opomba = pocisti(n.besedilo);
+        }
+
+        izhod.push({
+          stran: s.stran,
+          y: ((mere.visina - b.vrh) / mere.visina) * 100,
+          naslov,
+          opomba: opomba || null,
+        });
+      }
+    });
+    return izhod.sort((a, b) => a.stran - b.stran || a.y - b.y);
+  }
+
   /** Ali je ime polja neuporabno ("Checkbox7") in naj raje vzamemo besedilo? */
   function imeJeNeuporabno(ime) {
     return /^(check ?box|text ?field|polje|field)\s*\d*$/i.test(ime);
@@ -481,6 +545,7 @@
     najdiMestaPodpisov,
     zdruziVVrstice,
     zdruziVIzbire,
+    najdiRazdelke,
     imeJeNeuporabno,
   };
 });

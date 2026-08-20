@@ -487,3 +487,23 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
   margin-bottom: 3px;
 }
 .odgovor-gumbi { flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---------- razdelki obrazca in velikost podpisa ---------- */
+.polja-skupina > h3 { display: flex; align-items: baseline; gap: 8px; }
+.stran-oznaka {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pridusen);
+  margin-left: auto;
+}
+.opomba-razdelka {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--opozorilo);
+  background: var(--opozorilo-ozadje);
+  border: 1px solid var(--opozorilo-rob);
+  border-radius: 8px;
+}
+.velikost-oznaka { margin-top: 8px; font-weight: 500; }
+.drsnik-velikosti { width: 100%; margin: 2px 0 4px; accent-color: var(--modra); }
