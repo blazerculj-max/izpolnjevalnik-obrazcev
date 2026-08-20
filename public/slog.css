@@ -350,6 +350,15 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
   font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .odgovor-gumb:hover:not(:disabled) { border-color: var(--modra); color: var(--modra); }
+/* Izbrana možnost mora biti vidna tudi tam, kjer ni DA/NE ("m", "ž",
+   "fizična oseba", "30.000 EUR") - sicer klik nima nobenega odziva.
+   Pravili za .da in .ne imata več razredov, zato ostaneta v veljavi. */
+.odgovor-gumb.izbran {
+  background: var(--modra);
+  border-color: var(--modra);
+  color: #fff;
+  font-weight: 650;
+}
 .odgovor-gumb.da.izbran {
   background: var(--zelena); border-color: var(--zelena); color: #fff;
 }
