@@ -21,7 +21,7 @@
    * @param {Object} odvisnosti.logika - skupno/obrazci-logika.js
    */
   function ustvari({ PDFLib, fontkit, logika }) {
-    const { rgb } = PDFLib;
+    const { rgb, PDFName } = PDFLib;
 
     // Tip polja ugotovimo z instanceof, ne iz constructor.name: v pomanjšani
     // (minified) različici pdf-lib za brskalnik so imena razredov skrajšana
@@ -90,6 +90,33 @@
               visina: (r.height / mere.visina) * 100,
             };
           }
+          // Potrditveno polje ima lahko VEČ okenc, vsako s svojo vklopno
+          // vrednostjo - to je izbira (m/ž, DA/NE), ne kljukica. Zato jih
+          // preberemo vsa, ne le prvega.
+          if (tip === "CheckBox") {
+            skupno.okenca = p.acroField
+              .getWidgets()
+              .map((wid) => {
+                const rr = wid.getRectangle();
+                const st = najdiStran(doc, wid);
+                const me = strani[st - 1];
+                if (!rr || !me) return null;
+                const vklopna = wid.getOnValue();
+                return {
+                  stran: st,
+                  vklop: vklopna ? vklopna.asString().replace(/^\//, "") : null,
+                  pravokotnik: { x: rr.x, y: rr.y, width: rr.width, height: rr.height },
+                  polozaj: {
+                    x: (rr.x / me.sirina) * 100,
+                    y: ((me.visina - rr.y - rr.height) / me.visina) * 100,
+                    sirina: (rr.width / me.sirina) * 100,
+                    visina: (rr.height / me.visina) * 100,
+                  },
+                };
+              })
+              .filter(Boolean);
+          }
+
           if (typeof p.getOptions === "function") {
             try {
               skupno.moznosti = p.getOptions();
@@ -134,10 +161,21 @@
         });
       }
 
-      const vrstice = logika.zdruziVVrstice(polja);
+      const izbire = straniBesedila && straniBesedila.length
+        ? logika.zdruziVIzbire(polja, straniBesedila)
+        : [];
+      // Vrstice z DA/NE so poseben primer izbir; kadar jih prepoznamo kot
+      // izbire, jih ne podvajamo.
+      const vIzbirah = new Set(izbire.flatMap((i) => i.polja));
+      const vrstice = logika
+        .zdruziVVrstice(polja)
+        .filter((v) => !v.odgovori.some((o) => o.polja.some((n) => vIzbirah.has(n))));
 
-      // pravokotnika v točkah vmesnik ne potrebuje
-      polja.forEach((p) => delete p.pravokotnik);
+      // pravokotnikov v točkah vmesnik ne potrebuje
+      polja.forEach((p) => {
+        delete p.pravokotnik;
+        if (p.okenca) p.okenca.forEach((o) => delete o.pravokotnik);
+      });
 
       // Polja uredimo tako, kot si sledijo na papirju (od zgoraj navzdol, levo desno)
       polja.sort(
@@ -147,7 +185,7 @@
           (a.polozaj?.x ?? 0) - (b.polozaj?.x ?? 0)
       );
 
-      return { strani, polja, podpisi, vrstice };
+      return { strani, polja, podpisi, vrstice, izbire };
     }
 
     /**
@@ -198,7 +236,16 @@
         const tip = tipPolja(polje);
         try {
           if (tip === "CheckBox") {
-            vrednost === true || vrednost === "true" ? polje.check() : polje.uncheck();
+            if (vrednost === true || vrednost === "true") {
+              polje.check();
+            } else if (vrednost === false || vrednost === "false") {
+              polje.uncheck();
+            } else {
+              // Izbrana možnost večokenčnega polja. pdf-lib zna nastaviti le
+              // vklopno vrednost PRVEGA okenca (drugo zavrne z "invalid field
+              // value"), zato vrednost in stanje okenc zapišemo sami.
+              nastaviIzbiro(polje, String(vrednost), opozorila);
+            }
           } else if (
             tip === "RadioGroup" ||
             tip === "Dropdown" ||
@@ -294,6 +341,25 @@
       }
 
       return { pdf: await doc.save(), opozorila };
+    }
+
+    /** Nastavi večokenčno potrditveno polje na izbrano možnost. */
+    function nastaviIzbiro(polje, vklop, opozorila) {
+      const okenca = polje.acroField.getWidgets();
+      const iskano = okenca
+        .map((w) => w.getOnValue())
+        .find((v) => v && v.asString().replace(/^\//, "") === vklop);
+      if (!iskano) {
+        opozorila.push(`Možnosti "${vklop}" v polju "${polje.getName()}" ni.`);
+        return;
+      }
+      polje.acroField.dict.set(PDFName.of("V"), iskano);
+      okenca.forEach((w) => {
+        const v = w.getOnValue();
+        w.setAppearanceState(
+          v && v.asString() === iskano.asString() ? v : PDFName.of("Off")
+        );
+      });
     }
 
     return { shemaIzDokumenta, izpolni, mereStrani, preberiPolja };

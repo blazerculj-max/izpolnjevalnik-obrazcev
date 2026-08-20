@@ -12,10 +12,13 @@ Brez namestitve, brez prijave, brez strežnika, ki bi karkoli obdeloval.
   spletni obrazec — ročnega postavljanja polj ni;
 - polja poimenuje po besedilu, ki v PDF-ju stoji ob njih, ne po neuporabnih
   imenih tipa `Checkbox7`;
+- **izbire prepozna kot izbire**: kjer je na papirju več kvadratkov, v PDF-ju
+  pa eno polje (»Spol« m / ž, »Oseba« fizična / pravna, vrstice DA / NE),
+  ponudi eno vprašanje z gumbom za vsako možnost;
+- vsako možnost poimenuje po besedilu **tik desno od okenca**, vprašanja za
+  več oseb pa loči po naslovu razdelka (*Zavarovalec* / *Zavarovanec*);
 - okenca v isti vrstici obravnava kot **en odgovor**: klikneš DA ali NE enkrat,
   označita pa se okence v stolpcu POTREBE in v stolpcu ZAHTEVE;
-- kjer obrazec za kakšen odgovor **nima polja**, križec nariše sam — zato sta
-  DA in NE na voljo v vsaki vrstici;
 - **podpis** s prstom, peresom ali sledilno ploščico, ki ga povlečeš na pravo
   mesto na strani;
 - izvozi PDF z **zaklenjenimi polji**, pripravljen za tisk in pošiljanje;

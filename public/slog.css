@@ -464,3 +464,17 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
 }
 .samostojno strong { font-size: 13px; color: var(--modra); }
 .samostojno a { display: inline-block; text-decoration: none; margin-right: 6px; }
+
+/* ---------- izbira med možnostmi enega polja (zavihek Obrazci) ---------- */
+.znacka-razdelek {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--modra);
+  background: var(--modra-svetla);
+  border: 1px solid var(--modra-rob);
+  border-radius: 5px;
+  padding: 0 6px;
+  margin-bottom: 3px;
+}
+.odgovor-gumbi { flex-wrap: wrap; justify-content: flex-end; }

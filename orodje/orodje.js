@@ -28,6 +28,7 @@
   let podpisniPasovi = []; // [{ id, naziv, slika, stran, x, y, sirina, sifra }]
   let idPodpisaVZajemu = null;
   let odgovoriVrstic = {}; // { idVrstice: "DA" | "NE" }
+  let odgovoriIzbir = {}; // { idIzbire: vklopna vrednost okenca }
   let pisavaBajti = null;
   // Izvožen PDF živi kot blob: naslov, dokler ga ne sprostimo ali dokler se
   // stran ne zapre. Ker vsebuje podatke stranke, ga počistimo takoj, ko ga
@@ -103,6 +104,7 @@
       const shema = obrazciPdf.shemaIzDokumenta(doc, besedilo);
       odprtObrazec = { ime, shema };
       odgovoriVrstic = {};
+      odgovoriIzbir = {};
       pripraviPodpisnePasove();
       izrisiObrazec();
       oznaciIzbranegaVKazalu(ime);
@@ -275,16 +277,23 @@
     const vVrsticah = new Set(
       (shema.vrstice || []).flatMap((v) => v.odgovori.flatMap((o) => o.polja))
     );
+    // Polja, ki so del izbire, ne prikazujemo posebej - izbira jih pokrije.
+    const vIzbirah = new Set((shema.izbire || []).flatMap((i) => i.polja));
 
     // Vse skupaj postavimo v vrstni red, kot si sledi na papirju.
     const elementi = [
       ...shema.polja
-        .filter((p) => !vVrsticah.has(p.ime))
+        .filter((p) => !vVrsticah.has(p.ime) && !vIzbirah.has(p.ime))
         .map((p) => ({ stran: p.stran, y: p.polozaj?.y ?? 0, html: poljeVHtml(p) })),
       ...(shema.vrstice || []).map((v) => ({
         stran: v.stran,
         y: v.y,
         html: vrsticaVHtml(v),
+      })),
+      ...(shema.izbire || []).map((i) => ({
+        stran: i.stran,
+        y: i.y,
+        html: izbiraVHtml(i),
       })),
     ].sort((a, b) => a.stran - b.stran || a.y - b.y);
 
@@ -351,6 +360,18 @@
       })
     );
 
+    // Klik na možnost izbere natanko eno; ponoven klik jo prekliče.
+    prikaz.querySelectorAll(`.odgovor-gumb[data-izbira]`).forEach((g) =>
+      g.addEventListener("click", () => {
+        const { izbira, vklop } = g.dataset;
+        const jeIzbran = odgovoriIzbir[izbira] === vklop;
+        odgovoriIzbir[izbira] = jeIzbran ? undefined : vklop;
+        prikaz.querySelectorAll(`.odgovor-gumb[data-izbira="${izbira}"]`).forEach((d) =>
+          d.classList.toggle("izbran", !jeIzbran && d === g)
+        );
+      })
+    );
+
     const izbiraStrani = document.getElementById("stran-podpisa");
     const privzetaStran = podpisniPasovi[0]?.stran || 1;
     izbiraStrani.value = String(privzetaStran);
@@ -360,6 +381,29 @@
 
     izrisiSeznamPodpisov();
     izrisiMestoPodpisa(privzetaStran);
+  }
+
+  /**
+   * Izbira med možnostmi enega polja: "Spol" med m in ž, vrstica med DA in NE.
+   * Na obrazcu je to eno polje z več okenci, zato en klik izbere natanko eno.
+   */
+  function izbiraVHtml(i) {
+    const gumbi = i.moznosti
+      .map((m) => {
+        const barva = /^da$/i.test(m.oznaka) ? " da" : /^ne$/i.test(m.oznaka) ? " ne" : "";
+        return `<button type="button" class="odgovor-gumb${barva}"
+          data-izbira="${i.id}" data-vklop="${escapeHtml(m.vklop)}"
+          >${escapeHtml(m.oznaka)}</button>`;
+      })
+      .join("");
+    return `<div class="polje sirok vrstica-odgovora" data-id="${i.id}">
+        <div class="vrstica-besedilo">
+          ${i.razdelek ? `<span class="znacka-razdelek">${escapeHtml(i.razdelek)}</span>` : ""}
+          <span class="vrstica-trditev">${escapeHtml(i.oznaka)}</span>
+          ${i.dodatno ? `<span class="vrstica-produkt">${escapeHtml(i.dodatno)}</span>` : ""}
+        </div>
+        <div class="odgovor-gumbi">${gumbi}</div>
+      </div>`;
   }
 
   /**
@@ -577,6 +621,7 @@
     const obrazec = document.getElementById("obrazec-polja");
     if (obrazec) obrazec.reset();
     odgovoriVrstic = {};
+    odgovoriIzbir = {};
     document
       .querySelectorAll(".odgovor-gumb.izbran")
       .forEach((g) => g.classList.remove("izbran"));
@@ -617,6 +662,17 @@
       });
       oznake.push(...najden.oznake);
       odgovorjenihVrstic++;
+    }
+
+    // Izbrana možnost se zapiše kot vklopna vrednost okenca.
+    let odgovorjenihIzbir = 0;
+    for (const izbira of odprtObrazec.shema.izbire || []) {
+      const izbran = odgovoriIzbir[izbira.id];
+      if (!izbran) continue;
+      izbira.polja.forEach((ime) => {
+        vrednosti[ime] = izbran;
+      });
+      odgovorjenihIzbir++;
     }
 
     const podpisi = podpisniPasovi
@@ -670,7 +726,9 @@
           </p>
         </object>`;
       stanje.textContent = `Pripravljeno · ${Object.keys(vrednosti).length} polj${
-        odgovorjenihVrstic ? ` · ${odgovorjenihVrstic} odgovorjenih vrstic` : ""
+        odgovorjenihVrstic + odgovorjenihIzbir
+          ? ` · ${odgovorjenihVrstic + odgovorjenihIzbir} odgovorjenih vrstic`
+          : ""
       }${podpisi.length ? ` · ${podpisi.length} podpis(ov)` : ""}`;
     } catch (e) {
       stanje.textContent = "Napaka: " + e.message;

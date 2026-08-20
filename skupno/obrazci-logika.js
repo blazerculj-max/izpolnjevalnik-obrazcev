@@ -21,6 +21,12 @@
   const PRIVZETI_PAS = 22; // pt navzgor/navzdol, če polje nima soseda
   const NAJVISJI_PAS = 30; // pt - višje od tega vrstica obrazca ne seže
   const GLAVE = /^(da|ne|potrebe|zahteve|opis|kritje|st|št)$/i;
+  // Besedilo je oznaka okenca le, če stoji tik ob njem. Izmerjeno: pri
+  // Ponudbi so oznake 1,5-4 pt od okenca, pri Opredelitvi pa je najbližje
+  // besedilo desno že naslednji stolpec (9,8-29,3 pt).
+  const NAJVEC_VRZEL_OZNAKE = 7;
+  const ROB_SEKCIJE = 45; // pt od levega roba: tam obrazec piše naslove razdelkov
+  const NAJVEC_ODMIK_SEKCIJE = 130; // pt navzgor do naslova razdelka
 
   /**
    * Kose besedila združi v odseke: enaka višina IN brez večje vodoravne vrzeli.
@@ -302,6 +308,166 @@
       .sort((a, b) => a.stran - b.stran || a.y - b.y);
   }
 
+  /** Besedilo tik desno od okenca - njegova oznaka ("m", "fizična oseba"). */
+  function oznakaDesno(kosi, r) {
+    const cy = r.y + r.height / 2;
+    const desni = kosi
+      .filter((k) => Math.abs(k.y - cy) < 6 && k.x >= r.x + r.width - 2)
+      .sort((a, b) => a.x - b.x)[0];
+    if (!desni) return null;
+    const vrzel = desni.x - (r.x + r.width);
+    return vrzel <= NAJVEC_VRZEL_OZNAKE ? desni.besedilo : null;
+  }
+
+  /**
+   * Naslov razdelka ob levem robu strani ("Zavarovalec", "Zavarovanec").
+   * Po njem ločimo sicer enaka vprašanja, ki se na obrazcu ponovijo za več oseb.
+   */
+  function sekcijaOb(kosi, y) {
+    // Naslov razdelka je samostojna beseda ali dve z veliko začetnico
+    // ("Zavarovalec", "Prejemnik računa"). Tako izločimo drobce stavkov,
+    // ki po naključju stojijo ob robu ("(izpolniti le, če", "plačevanja").
+    const JE_NASLOV = /^[A-ZČŠŽ][a-zčšž]+(\s[a-zčšž]+)?$/;
+    const obRobu = kosi.filter((k) => k.x < ROB_SEKCIJE).sort((a, b) => b.y - a.y);
+    const najden = obRobu
+      .filter(
+        (k) => k.y >= y - 6 && k.y - y < NAJVEC_ODMIK_SEKCIJE && JE_NASLOV.test(k.besedilo)
+      )
+      .sort((a, b) => a.y - b.y)[0];
+    if (!najden) return null;
+
+    // Naslov ob robu je pogosto prelomljen čez več vrstic ("Vprašalnik o" /
+    // "zdravstvenem" / "stanju"), zato nadaljevanja pripnemo nazaj.
+    const deli = [najden.besedilo];
+    let zadnji = najden;
+    for (const k of obRobu) {
+      if (k.y >= zadnji.y || zadnji.y - k.y > 12) continue;
+      if (!/^[a-zčšž]/.test(k.besedilo) || deli.length >= 4) break;
+      deli.push(k.besedilo);
+      zadnji = k;
+    }
+    return deli.join(" ");
+  }
+
+  /** Odveč ločila in presledki ob oznakah iz PDF-ja. */
+  function pocisti(niz) {
+    return String(niz || "")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s:.,;*-]+|[\s:.,;*-]+$/g, "")
+      .trim();
+  }
+
+  /** Ali dve oznaki povesta isto? ("Spol" in "spol :") */
+  function jeIsto(a, b) {
+    const o = (x) =>
+      String(x || "")
+        .toLowerCase()
+        .replace(/[^a-zčšž0-9]+/g, "");
+    return o(a) === o(b);
+  }
+
+  /** Oznaka ene možnosti: besedilo ob okencu, sicer glava stolpca, sicer vrednost. */
+  function oznakaMoznosti(kosi, okence) {
+    const r = okence.pravokotnik;
+    return (
+      oznakaDesno(kosi, r) ||
+      najdiGlavoStolpca(kosi, r.x + r.width / 2, r.y + r.height / 2) ||
+      String(okence.vklop || "").toUpperCase()
+    );
+  }
+
+  /**
+   * Potrditveno polje, katerega okenca imajo RAZLIČNE vklopne vrednosti, ni
+   * kljukica, ampak izbira: "Spol" med m in ž, "Oseba" med fizično in pravno,
+   * vrstica v Opredelitvi med DA in NE. Zato zanj ponudimo eno vprašanje z
+   * gumbom za vsako možnost.
+   *
+   * Polji, ki stojita v isti vrstici in imata enake možnosti, sta en sam
+   * odgovor (v Opredelitvi stolpca POTREBE in ZAHTEVE).
+   */
+  function zdruziVIzbire(polja, strani) {
+    const izbirna = polja.filter(
+      (p) =>
+        p.tip === "CheckBox" &&
+        Array.isArray(p.okenca) &&
+        new Set(p.okenca.map((o) => o.vklop)).size >= 2
+    );
+
+    const skupine = [];
+    for (const polje of izbirna) {
+      const stran = strani[polje.stran - 1];
+      const kosi = stran ? stran.kosi : [];
+      const okenca = [...polje.okenca].sort(
+        (a, b) => a.pravokotnik.x - b.pravokotnik.x
+      );
+      const moznosti = okenca.map((o) => ({
+        vklop: o.vklop,
+        oznaka: oznakaMoznosti(kosi, o),
+        polozaj: o.polozaj,
+      }));
+
+      // Vprašanje: ime polja, kadar kaj pove ("Spol", "Zavarovalna vsota").
+      // Pri obrazcih z imeni tipa "Checkbox7" vzamemo besedilo vrstice.
+      const izVrstice = pocisti(polje.oznaka_iz_pdf);
+      const jeMoznost = moznosti.some((m) => jeIsto(m.oznaka, izVrstice));
+      const imeJePovedno = !imeJeNeuporabno(polje.ime);
+      // "Spol1" in "Spol2" sta isti vprašanji za drugo osebo - zaporedna
+      // številka pove le to, kar že pove naslov razdelka.
+      const imeBrezStevilke = pocisti(polje.ime).replace(/\s*\d+$/, "");
+      const vprasanje =
+        imeJePovedno || !izVrstice || jeMoznost ? imeBrezStevilke : izVrstice;
+
+      // Pojasnilo dodamo le, če je cel stavek - kratki drobci ob polju so
+      // pogosto oznaka SOSEDNJEGA polja in bi zavajali.
+      const pojasnilo =
+        izVrstice && !jeMoznost && !jeIsto(izVrstice, vprasanje) && izVrstice.length > 20
+          ? izVrstice
+          : null;
+
+      const kljuc = moznosti.map((m) => m.oznaka).join("|");
+      const y = polje.polozaj ? polje.polozaj.y : 0;
+      const obstojeca = skupine.find(
+        (s) => s.stran === polje.stran && Math.abs(s.y - y) < 0.6 && s.kljuc === kljuc
+      );
+      if (obstojeca) {
+        obstojeca.polja.push(polje.ime);
+        // Drugi stolpec iste vrstice pove, za kateri produkt gre.
+        if (!obstojeca.dodatno && izVrstice && !jeIsto(izVrstice, obstojeca.oznaka)) {
+          obstojeca.dodatno = izVrstice;
+        }
+        continue;
+      }
+      skupine.push({
+        stran: polje.stran,
+        y,
+        kljuc,
+        polja: [polje.ime],
+        oznaka: vprasanje,
+        dodatno: pojasnilo,
+        razdelek: (() => {
+          const r = sekcijaOb(kosi, okenca[0].pravokotnik.y);
+          // Razdelek, ki le ponovi vprašanje, ne pove ničesar.
+          if (!r || jeIsto(r, vprasanje)) return null;
+          return jeIsto(r.split(" ")[0], vprasanje.split(" ")[0]) ? null : r;
+        })(),
+        moznosti,
+      });
+    }
+
+    return skupine
+      .map((s, i) => ({
+        id: "izbira" + i,
+        stran: s.stran,
+        y: s.y,
+        oznaka: s.oznaka,
+        dodatno: s.dodatno || null,
+        razdelek: s.razdelek,
+        polja: s.polja,
+        moznosti: s.moznosti.map((m) => ({ vklop: m.vklop, oznaka: m.oznaka })),
+      }))
+      .sort((a, b) => a.stran - b.stran || a.y - b.y);
+  }
+
   /** Ali je ime polja neuporabno ("Checkbox7") in naj raje vzamemo besedilo? */
   function imeJeNeuporabno(ime) {
     return /^(check ?box|text ?field|polje|field)\s*\d*$/i.test(ime);
@@ -314,6 +480,7 @@
     oznaciPolja,
     najdiMestaPodpisov,
     zdruziVVrstice,
+    zdruziVIzbire,
     imeJeNeuporabno,
   };
 });
