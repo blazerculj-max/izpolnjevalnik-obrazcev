@@ -556,6 +556,12 @@
                 ? `<button type="button" class="gumb-tih majhen" data-odstrani="${p.id}">Odstrani</button>`
                 : ""
             }
+            ${
+              p.slika && podpisniPasovi.some((d) => d !== p && !d.slika)
+                ? `<button type="button" class="gumb-tih majhen" data-kopiraj="${p.id}"
+                     title="Isti podpis prenese na vsa še prazna mesta">Kopiraj v ostala</button>`
+                : ""
+            }
           </div>
         </div>`
       )
@@ -579,6 +585,18 @@
         pas.sirina = Number(d.value);
         const izpis = ovoj.querySelector(`[data-velikost="${pas.id}"]`);
         if (izpis) izpis.textContent = pas.sirina;
+        izrisiZnakePodpisov();
+      })
+    );
+    // Kadar je zavarovalec hkrati zavarovanec ali plačnik, se podpisuje
+    // enkrat - isti podpis prenesemo na vsa še prazna mesta.
+    ovoj.querySelectorAll("[data-kopiraj]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const vir = najdiPas(b.dataset.kopiraj);
+        podpisniPasovi.forEach((p) => {
+          if (p !== vir && !p.slika) p.slika = vir.slika;
+        });
+        izrisiSeznamPodpisov();
         izrisiZnakePodpisov();
       })
     );
@@ -802,6 +820,10 @@
   const namigPodpisa = document.getElementById("namig-podpisa");
   let rise = false;
   let jePodpisan = false;
+  // Na zaslonu na dotik riše samo prvi kazalec; ko je v rabi pero,
+  // dotik dlani ne sme puščati sledi.
+  let aktivniKazalec = null;
+  let jeVRabiPero = false;
 
   // Prostoročni način: na sledilni ploščici MacBooka je držanje klika med
   // podpisovanjem nerodno, zato po pritisku na "Začni risanje" riše že samo
@@ -819,6 +841,11 @@
   let pero = null; // navidezno pero: { x, y } v koordinatah platna
   let zadnjiKazalec = null; // za računanje premika
   const MIROVANJE_MS = 2000;
+  // Kratka pavza dvigne ali spusti pero: tako lahko napišeš ime in priimek
+  // ločeno ali dodaš strešico, ne da bi vlekel neprekinjeno črto.
+  const PREMOR_MS = 400;
+  let peroGor = false;
+  let casovnikPremora = null;
   const ODSTEVANJE_S = 2;
   const ZACETEK_X = 0.1; // 10 % širine od levega roba
   const ZACETEK_Y = 0.55; // malo pod sredino, kot na podpisni črti
@@ -843,6 +870,7 @@
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#10243a";
     jePodpisan = false;
+    aktivniKazalec = null;
     koncajProstorocno();
   }
 
@@ -884,7 +912,9 @@
     gumbZacni.textContent = "Končaj risanje";
     namigPodpisa.innerHTML =
       "Zdaj drsi s prstom — <strong>brez pritiskanja</strong>. Pero začne na " +
-      "sredini levo. Ko se za 2 sekundi ustaviš, se risanje konča.";
+      "sredini levo. Za <strong>dvig peresa</strong> se za hip ustavi, premakni se " +
+      "drugam in se spet ustavi — tako pišeš črko za črko in dodaš strešice. " +
+      "Po 2 sekundah mirovanja se risanje konča.";
 
     pokaziIzhodisce(true);
     // Premike lovimo na celem oknu: kje je kazalec, ni pomembno, šteje le pot.
@@ -910,6 +940,9 @@
     rise = false;
     zadnjiKazalec = null;
     clearTimeout(casovnikMirovanja);
+    clearTimeout(casovnikPremora);
+    peroGor = false;
+    platno.classList.remove("pero-gor");
     clearInterval(casovnikOdstevanja);
     casovnikOdstevanja = null;
     window.removeEventListener("pointermove", premikPeresa);
@@ -946,13 +979,38 @@
     );
     zadnjiKazalec = { x: e.clientX, y: e.clientY };
 
-    ctx.lineTo(pero.x, pero.y);
-    ctx.stroke();
-    jePodpisan = true;
+    // Ko je pero dvignjeno, se premikamo brez sledi.
+    if (!peroGor) {
+      ctx.lineTo(pero.x, pero.y);
+      ctx.stroke();
+      jePodpisan = true;
+    }
   }
 
   /** Po 2 s mirovanja risanje ustavimo in ponudimo Potrdi / Ponovi. */
+  /** Pavza med risanjem dvigne pero, pavza med premikanjem ga spet spusti. */
+  function ponastaviPremor() {
+    clearTimeout(casovnikPremora);
+    // Dokler se uporabnik ni premaknil, ni česa dvigniti - sicer bi se pero
+    // dvignilo že 400 ms po koncu odštevanja, še pred prvo potezo.
+    if (!zadnjiKazalec) return;
+    casovnikPremora = setTimeout(() => {
+      if (!prostorocno) return;
+      peroGor = !peroGor;
+      platno.classList.toggle("pero-gor", peroGor);
+      pokaziIzhodisce(peroGor);
+      if (!peroGor) {
+        ctx.beginPath();
+        ctx.moveTo(pero.x, pero.y);
+      }
+      namigPodpisa.innerHTML = peroGor
+        ? "Pero je <strong>dvignjeno</strong> — premakni se na novo mesto in se za hip ustavi, da se spusti."
+        : "Pero <strong>riše</strong>. Za dvig se za hip ustavi.";
+    }, PREMOR_MS);
+  }
+
   function ponastaviMirovanje() {
+    ponastaviPremor();
     clearTimeout(casovnikMirovanja);
     casovnikMirovanja = setTimeout(() => {
       if (!prostorocno) return;
@@ -990,9 +1048,19 @@
   // Pointer dogodki pokrijejo miško, sledilno ploščico, dotik in Apple Pencil naenkrat.
   platno.addEventListener("pointerdown", (e) => {
     if (prostorocno) return; // v prostoročnem načinu klik ni potreben
+    if (e.pointerType === "pen") jeVRabiPero = true;
+    if (jeVRabiPero && e.pointerType === "touch") return; // dlan
+    if (aktivniKazalec !== null) return; // druga poteza počaka
     e.preventDefault();
-    platno.setPointerCapture(e.pointerId);
+    aktivniKazalec = e.pointerId;
     rise = true;
+    // Lovljenje kazalca je priročnost, ne pogoj: če ga brskalnik zavrne,
+    // mora risanje vseeno steči.
+    try {
+      platno.setPointerCapture(e.pointerId);
+    } catch {
+      /* ni bistveno */
+    }
     const t = tocka(e);
     ctx.beginPath();
     ctx.moveTo(t.x, t.y);
@@ -1001,7 +1069,7 @@
   // Risanje s pritiskom (dotik, pero, miška). Prostoročni način ima svoj
   // poslušalec na oknu, zato se tu ne oglašamo.
   platno.addEventListener("pointermove", (e) => {
-    if (prostorocno || !rise) return;
+    if (prostorocno || !rise || e.pointerId !== aktivniKazalec) return;
     e.preventDefault();
     const t = tocka(e);
     ctx.lineTo(t.x, t.y);
@@ -1011,11 +1079,19 @@
 
   // Ko kazalec zapusti platno, potezo prekinemo; ob vrnitvi se začne nova.
   platno.addEventListener("pointerleave", () => {
-    if (!prostorocno) rise = false;
+    if (!prostorocno) {
+      rise = false;
+      aktivniKazalec = null;
+    }
   });
   ["pointerup", "pointercancel"].forEach((d) =>
-    platno.addEventListener(d, () => {
-      if (!prostorocno) rise = false;
+    platno.addEventListener(d, (e) => {
+      if (prostorocno) return;
+      if (e.pointerId !== aktivniKazalec) return;
+      // Dvig prsta ali peresa konča potezo; naslednja se začne na novem
+      // mestu, zato lahko pišeš črko za črko in dodajaš strešice.
+      aktivniKazalec = null;
+      rise = false;
     })
   );
 
