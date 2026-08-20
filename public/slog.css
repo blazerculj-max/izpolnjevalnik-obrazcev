@@ -507,3 +507,20 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
 }
 .velikost-oznaka { margin-top: 8px; font-weight: 500; }
 .drsnik-velikosti { width: 100%; margin: 2px 0 4px; accent-color: var(--modra); }
+
+/* ---------- enota in pripomba ob besedilnem polju ---------- */
+.vnos-z-enoto { display: flex; align-items: center; gap: 7px; }
+.vnos-z-enoto input { flex: 1; min-width: 0; }
+.enota-polja {
+  flex: none;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--pridusen);
+  letter-spacing: .02em;
+}
+.pripomba-polja {
+  display: block;
+  font-size: 11.5px;
+  color: var(--modra);
+  margin-top: 3px;
+}

@@ -462,11 +462,18 @@
    */
   function pojasniloJeKoristno(p) {
     if (!p.oznaka_iz_pdf || p.oznaka_iz_pdf === p.oznaka) return false;
+    // Enota je izpisana ob polju; kot pojasnilo bi se le podvojila.
+    if (p.enota && p.oznaka_iz_pdf === p.enota) return false;
     const ocisti = (s) =>
       String(s).toLowerCase().replace(/[^a-zčšž0-9]+/g, " ").replace(/\s+/g, " ").trim();
     const a = ocisti(p.oznaka);
     const b = ocisti(p.oznaka_iz_pdf);
-    return !a.includes(b) && !b.includes(a);
+    if (a === b || a.includes(b)) return false;
+    // Pojasnilo se pogosto začne z isto besedo kot oznaka ("Pristopna starost"
+    // → "Pristopna starost zavarovanca (letnica … - letnica rojstva)"). Kadar
+    // doda bistveno več, ga pokažemo, sicer je le ponovitev.
+    if (b.includes(a)) return b.length - a.length >= 10;
+    return true;
   }
 
   /** Polje obrazca kot vnos v spletnem obrazcu. */
@@ -499,10 +506,19 @@
     // autocomplete/spellcheck izklopimo na vsakem polju posebej: Safari
     // nastavitev na obrazcu pogosto ignorira in bi si podatke stranke
     // zapomnil za samodejno izpolnjevanje.
+    // Enota ("LET", "EUR") stoji ob polju, pripomba z obrazca pa pod njim.
+    const enota = p.enota
+      ? `<span class="enota-polja">${escapeHtml(p.enota)}</span>`
+      : "";
+    const pripomba = p.pripomba
+      ? `<span class="pripomba-polja">${escapeHtml(p.pripomba)}</span>`
+      : "";
     return `<div class="polje"><label class="oznaka-polja" for="${id}">${oznaka}</label>
-      <input type="text" id="${id}" data-ime="${escapeHtml(p.ime)}" data-tip="TextField"
-        autocomplete="off" autocorrect="off" spellcheck="false"
-        ${p.najvec_znakov ? `maxlength="${p.najvec_znakov}"` : ""} />${pojasnilo}</div>`;
+      <div class="vnos-z-enoto">
+        <input type="text" id="${id}" data-ime="${escapeHtml(p.ime)}" data-tip="TextField"
+          autocomplete="off" autocorrect="off" spellcheck="false"
+          ${p.najvec_znakov ? `maxlength="${p.najvec_znakov}"` : ""} />${enota}
+      </div>${pojasnilo}${pripomba}</div>`;
   }
 
   /** Seznam podpisnih mest s predogledom in gumbom za zajem. */

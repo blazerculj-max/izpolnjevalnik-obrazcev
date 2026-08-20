@@ -129,27 +129,40 @@
         .join(" ")
         .replace(/\s+/g, " ")
         .trim();
-    const istiStolpec = (kandidati, izhodiscni) =>
-      kandidati.filter((o) => Math.abs(o.od - izhodiscni.od) < 25);
 
-    const levo = vPasu.filter((o) => o.do <= r.x + 2);
-    const desno = vPasu.filter((o) => o.od >= r.x + r.width - 2);
-    const zLeve = levo.length
-      ? zdruzi(istiStolpec(levo, levo.reduce((a, b) => (b.do > a.do ? b : a))))
-      : "";
-    const zDesne = desno.length
-      ? zdruzi(istiStolpec(desno, desno.reduce((a, b) => (b.od < a.od ? b : a))))
-      : "";
-
-    // Katera stran ima besedilo natanko v vrstici kvadratka? Oznaka polja stoji
-    // v isti vrstici; navpični napis ob robu obrazca je vedno malo zamaknjen.
     const cy = r.y + r.height / 2;
-    const najblizje = (o) =>
-      o.length ? Math.min(...o.map((x) => Math.abs(x.y - cy))) : Infinity;
 
-    if (!zLeve) return zDesne || null;
-    if (!zDesne) return zLeve;
-    return najblizje(desno) < najblizje(levo) ? zDesne : zLeve;
+    /**
+     * Oznaka polja stoji v NJEGOVI vrstici, ne vrstico više: pas je namenoma
+     * širok zaradi večvrstičnih trditev, zato bi sicer vanj padel naslov
+     * razdelka nad poljem. Zato najprej poiščemo najbližjo vrstico besedila,
+     * v njej pa odsek, ki je vodoravno najbliže polju - ne najdaljšega.
+     */
+    const izberi = (kandidati, razdalja) => {
+      if (!kandidati.length) return null;
+      const najblizjaVrstica = Math.min(...kandidati.map((o) => Math.abs(o.y - cy)));
+      const vVrstici = kandidati.filter(
+        (o) => Math.abs(o.y - cy) - najblizjaVrstica < 6
+      );
+      const sidro = vVrstici.reduce((a, b) => (razdalja(b) < razdalja(a) ? b : a));
+      // Večvrstične oznake nadaljujemo po istem stolpcu, a le v tem pasu.
+      const stolpec = kandidati.filter((o) => Math.abs(o.od - sidro.od) < 25);
+      return { besedilo: zdruzi(stolpec), razdalja: razdalja(sidro) };
+    };
+
+    const levo = izberi(
+      vPasu.filter((o) => o.do <= r.x + 2),
+      (o) => r.x - o.do
+    );
+    const desno = izberi(
+      vPasu.filter((o) => o.od >= r.x + r.width - 2),
+      (o) => o.od - (r.x + r.width)
+    );
+
+    // Na obrazcih oznaka skoraj vedno stoji PRED poljem; desno je pogosto že
+    // enota ali oznaka sosednjega polja. Zato ima leva stran prednost.
+    if (levo && levo.besedilo) return levo.besedilo;
+    return desno && desno.besedilo ? desno.besedilo : null;
   }
 
   /**
@@ -166,6 +179,7 @@
       stran.odseki = odseki;
       oznake.set(polje.ime, {
         oznaka: najdiOznakoVrstice(odseki, polje, polja),
+        desno: polje.tip === "TextField" ? najdiDesnoPripombo(odseki, polje) : null,
         glava:
           polje.tip === "CheckBox"
             ? najdiGlavoStolpca(stran.kosi, r.x + r.width / 2, r.y + r.height / 2)
@@ -347,6 +361,52 @@
       zadnji = k;
     }
     return deli.join(" ");
+  }
+
+  /** Napis z obrazca: odveč presledki pred ločili in velika začetnica. */
+  function pocistiNapis(niz) {
+    const t = pocisti(niz)
+      .replace(/\s+([.,;:!?])/g, "$1")
+      .replace(/\s*\/\s*/g, " / ");
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+  }
+
+  /**
+   * Prikazna oznaka polja. Napis z obrazca je skoraj vedno boljši od imena
+   * polja ("datum začetka" proti "Začetek1"), a le kadar je kratek - dolgi
+   * napisi so pojasnila in sodijo pod polje, ne v naslov.
+   */
+  function izberiOznako(ime, izPdf) {
+    const napis = pocistiNapis(izPdf);
+    if (!napis) return pocisti(ime);
+    if (imeJeNeuporabno(ime)) return napis;
+    return napis.length <= 40 ? napis : pocisti(ime);
+  }
+
+  /**
+   * Kar stoji tik DESNO od besedilnega polja: enota ("LET", "EUR") in
+   * morebitna pripomba, ki sledi ("Trajanje zavarovanj je 4 leta.").
+   */
+  function najdiDesnoPripombo(odseki, polje) {
+    const r = polje.pravokotnik;
+    if (!r) return null;
+    const cy = r.y + r.height / 2;
+    const desni = odseki
+      .filter(
+        (o) =>
+          Math.abs(o.y - cy) < 8 &&
+          o.od >= r.x + r.width - 2 &&
+          o.od - (r.x + r.width) < 24
+      )
+      .sort((a, b) => a.od - b.od)[0];
+    if (!desni) return null;
+
+    // Desno od polja stoji ali enota ali - pogosteje - oznaka NASLEDNJEGA
+    // polja. Ločimo ju tako, da priznamo le znane enote; vse drugo pustimo
+    // tistemu polju, ki mu pripada.
+    const ujem = desni.besedilo.match(/^(LET|EUR|KG|CM|MM|%)\b\s*(.*)$/);
+    if (!ujem) return null;
+    return { enota: ujem[1], pripomba: pocisti(ujem[2]) || null };
   }
 
   /** Odveč ločila in presledki ob oznakah iz PDF-ja. */
@@ -546,6 +606,8 @@
     zdruziVVrstice,
     zdruziVIzbire,
     najdiRazdelke,
+    izberiOznako,
+    pocistiNapis,
     imeJeNeuporabno,
   };
 });

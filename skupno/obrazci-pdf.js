@@ -149,10 +149,17 @@
         polja.forEach((p) => {
           const najdeno = oznake.get(p.ime);
           if (!najdeno) return;
-          p.oznaka_iz_pdf = najdeno.oznaka || null;
+          p.oznaka_iz_pdf = najdeno.oznaka
+            ? logika.pocistiNapis(najdeno.oznaka)
+            : null;
           p.glava = najdeno.glava || null;
-          p.oznaka =
-            logika.imeJeNeuporabno(p.ime) && najdeno.oznaka ? najdeno.oznaka : p.ime;
+          p.oznaka = logika.izberiOznako(p.ime, najdeno.oznaka);
+          if (najdeno.desno) {
+            p.enota = najdeno.desno.enota || null;
+            p.pripomba = najdeno.desno.pripomba || null;
+            // Če je bila za oznako vzeta prav enota, ta ne pove ničesar.
+            if (p.enota && p.oznaka === p.enota) p.oznaka = p.ime;
+          }
         });
         podpisi = logika.najdiMestaPodpisov(straniBesedila, strani);
       } else {
