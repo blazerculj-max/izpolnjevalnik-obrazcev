@@ -6,11 +6,15 @@
     <title>Izpolnjevalnik obrazcev</title>
 
     <!--
-      Pravilo, ki ga uveljavi brskalnik: stran ne sme vzpostaviti nobene
-      povezave izven lastnega izvora. Podatki stranke torej ne morejo odteči,
-      tudi če bi se v kodo kdaj prikradlo kaj nezaželenega - to ni obljuba,
-      ampak omejitev, ki jo lahko vsak preveri v izvorni kodi.
+      Pravilo, ki ga uveljavi brskalnik: stran ne sme vzpostaviti NOBENE
+      omrežne povezave. Ker so knjižnice, pisava in obrazci vgrajeni v to
+      datoteko, ni česa nalagati - zato `connect-src 'none'`. Podatki stranke
+      torej ne morejo odteči, tudi če bi se v kodo kdaj prikradlo kaj
+      nezaželenega; to ni obljuba, ampak omejitev, ki jo lahko vsak preveri
+      v izvorni kodi.
       `form-action 'none'` pomeni, da obrazca ni mogoče nikamor oddati.
+      `frame-src blob:` rabi predogled izvoženega PDF-ja: brskalnik ga odpre
+      v vgnezdenem pregledovalniku, torej kot okvir, ne kot navaden predmet.
       Skripte in slogi so vgnezdeni, zato je zanje potreben 'unsafe-inline';
       pri odtekanju podatkov pa odloča connect-src, ne script-src.
     -->
@@ -21,7 +25,8 @@
                style-src 'unsafe-inline';
                img-src 'self' data: blob:;
                object-src blob:;
-               connect-src 'self';
+               frame-src blob:;
+               connect-src 'none';
                form-action 'none';
                base-uri 'none';"
     />
@@ -53,8 +58,8 @@
     </header>
 
     <main class="orodje-ovoj">
-      <!-- Seznam obrazcev se pokaže samo, kadar orodje stoji na spletu in
-           obrazci ležijo poleg njega. -->
+      <!-- Prazni obrazci so vgrajeni v to datoteko, zato je seznam na voljo
+           tudi brez omrežja. -->
       <section id="kazalo-obrazcev" class="kazalo-obrazcev skrit"></section>
 
       <div id="spustisce" class="spustisce">

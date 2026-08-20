@@ -104,22 +104,26 @@
 
   // ------------------------------------------------- kazalo pripravljenih obrazcev
 
-  // Kadar orodje stoji na spletu (GitHub Pages), poleg njega ležijo tudi
-  // obrazci - takrat kolegu ni treba nikjer iskati PDF-ja. Ko je datoteka
-  // odprta z dvoklikom (file://), tega seznama ni in ostane spuščanje datoteke.
+  // Prazni obrazci so vgrajeni v samo datoteko (window.VGRAJENI_OBRAZCI), zato
+  // je seznam na voljo tudi pri odpiranju z dvoklikom in brez omrežja.
+  // Poljuben drug obrazec uporabnik preprosto povleče na stran.
   const kazaloEl = document.getElementById("kazalo-obrazcev");
 
-  async function naloziKazalo() {
+  function naloziKazalo() {
     if (!kazaloEl) return;
-    try {
-      const odziv = await fetch("obrazci/kazalo.json", { cache: "no-cache" });
-      if (!odziv.ok) throw new Error(odziv.status);
-      const kazalo = await odziv.json();
-      if (!Array.isArray(kazalo.obrazci) || kazalo.obrazci.length === 0) return;
-      izrisiKazalo(kazalo.obrazci);
-    } catch {
-      /* brez seznama: uporabnik obrazec preprosto povleče na stran */
-    }
+    const obrazci = Array.isArray(window.VGRAJENI_OBRAZCI)
+      ? window.VGRAJENI_OBRAZCI
+      : [];
+    if (obrazci.length === 0) return;
+    izrisiKazalo(obrazci);
+  }
+
+  /** base64 -> bajti (obrazci so v datoteki shranjeni kot base64). */
+  function izBase64(niz) {
+    const dvojiski = atob(niz);
+    const bajti = new Uint8Array(dvojiski.length);
+    for (let i = 0; i < dvojiski.length; i++) bajti[i] = dvojiski.charCodeAt(i);
+    return bajti;
   }
 
   function izrisiKazalo(obrazci) {
@@ -143,14 +147,14 @@
   }
 
   async function odpriIzKazala(datoteka) {
-    prikaz.innerHTML = '<p class="prazno">Prenašam obrazec…</p>';
-    try {
-      const odziv = await fetch("obrazci/" + encodeURIComponent(datoteka));
-      if (!odziv.ok) throw new Error("HTTP " + odziv.status);
-      await odpriBajte(new Uint8Array(await odziv.arrayBuffer()), datoteka);
-    } catch (e) {
-      prikaziNapako("Obrazca ni bilo mogoče prenesti: " + e.message);
+    const najden = (window.VGRAJENI_OBRAZCI || []).find(
+      (o) => o.datoteka === datoteka
+    );
+    if (!najden) {
+      prikaziNapako("Tega obrazca ni v datoteki.");
+      return;
     }
+    await odpriBajte(izBase64(najden.b64), datoteka);
   }
 
   function oznaciIzbranegaVKazalu(ime) {

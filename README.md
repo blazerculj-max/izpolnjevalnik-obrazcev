@@ -28,12 +28,12 @@ Brez namestitve, brez prijave, brez strežnika, ki bi karkoli obdeloval.
 prebere, izpolni in shrani tvoj brskalnik. Ni strežnika, ki bi kaj videl, ni
 baze in ni beleženja.
 
-To ni le zasnova, ampak pravilo, ki ga uveljavi brskalnik. Stran nosi
-`Content-Security-Policy` z `connect-src 'self'` in `form-action 'none'`,
-kar pomeni, da **ne more** vzpostaviti povezave nikamor razen tja, od koder je
-prišla — in tam stoji statično gostovanje, ki podatkov ne zna sprejeti.
+To ni le zasnova, ampak pravilo, ki ga uveljavi brskalnik. Ker so knjižnice,
+pisava in obrazci vgrajeni v samo datoteko, stran nima česa nalagati — zato
+nosi `Content-Security-Policy` s **`connect-src 'none'`** in `form-action 'none'`.
+Brskalnik ji torej prepove **sleherno** omrežno povezavo in oddajo obrazca.
 Preverjeno je, da so blokirani vsi običajni kanali: `fetch`, slika kot
-piksel, `navigator.sendBeacon` in WebSocket.
+sledilni piksel, `navigator.sendBeacon` in WebSocket.
 
 Kar stran hrani na napravi:
 
@@ -80,16 +80,20 @@ odstrani.
 ## Delo brez povezave
 
 Gumb **Prenesi za brez povezave** shrani celo orodje kot **eno datoteko HTML**
-(~3,7 MB). Odpre se z dvoklikom in deluje brez interneta. Obrazec vanjo
-preprosto povlečeš.
+(~4,1 MB). Odpre se z dvoklikom in deluje brez interneta.
+
+**Obrazci so vgrajeni v to isto datoteko**, zato je seznam na voljo tudi na
+povsem odklopljeni napravi — ni je treba nikamor priklopiti in nič ni treba
+prenašati zraven. Poljuben drug obrazec preprosto povlečeš nanjo.
 
 ## Dodajanje obrazca
 
 1. PDF daj v `data/obrazci/` (mora biti »aktiven«, torej z vnosnimi polji).
-2. Commitaj v `main`.
+2. Poženi `npm run zgradi` — obrazec se vgradi v orodje.
+3. Commitaj v `main`.
 
-GitHub Actions stran zgradi na novo in objavi; seznam obrazcev se sestavi sam
-iz datotek, zato ga ni treba nikjer vzdrževati.
+Seznam se sestavi sam iz datotek, zato ga ni treba nikjer vzdrževati. Če je
+repozitorij objavljen, GitHub Actions stran zgradi in objavi ob commitu.
 
 ## Razvoj
 

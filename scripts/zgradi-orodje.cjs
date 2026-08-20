@@ -2,7 +2,9 @@
 // Iz orodje/predloga.html zgradi ENO samostojno datoteko HTML, ki deluje
 // brez strežnika in brez interneta: `npm run orodje`.
 //
-// Vanjo vgradimo pdf-lib, fontkit, pdf.js, pisavo DejaVu in skupno logiko.
+// Vanjo vgradimo pdf-lib, fontkit, pdf.js, pisavo DejaVu, skupno logiko IN
+// prazne obrazce iz data/obrazci/ - zato ima orodje svoj seznam obrazcev tudi,
+// ko teče z dvoklikom in brez omrežja.
 // Dve stvari, brez katerih to ne bi delovalo ob odpiranju z dvoklikom (file://):
 //
 //  1. Zunanjih modulov brskalnik s file:// ne sme naložiti, zato pdf.js
@@ -15,6 +17,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { PDFDocument } = require("pdf-lib");
 
 const KOREN = path.join(__dirname, "..");
 const IZHOD = path.join(KOREN, "public", "orodje-obrazci.html");
@@ -33,6 +36,42 @@ function vgrajeniBajti(pot, ime) {
 for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;})("${b64}");`;
 }
 
+/**
+ * Prazne obrazce vgradimo kot base64 skupaj s podatki za seznam.
+ * Število strani in polj preberemo tu, da jih orodju ni treba računati
+ * ob vsakem zagonu.
+ */
+async function vgrajeniObrazci() {
+  const mapa = path.join(KOREN, "data", "obrazci");
+  if (!fs.existsSync(mapa)) return [];
+
+  const izhod = [];
+  for (const d of fs
+    .readdirSync(mapa)
+    .filter((f) => f.toLowerCase().endsWith(".pdf"))
+    .sort((a, b) => a.localeCompare(b, "sl"))) {
+    const bajti = fs.readFileSync(path.join(mapa, d));
+    try {
+      const doc = await PDFDocument.load(bajti, { ignoreEncryption: true });
+      const stPolj = doc.getForm().getFields().length;
+      if (stPolj === 0) {
+        console.warn(`   ⚠️  ${d}: brez vnosnih polj — ni vgrajen.`);
+        continue;
+      }
+      izhod.push({
+        datoteka: d,
+        ime: d.replace(/\.pdf$/i, "").replace(/[-_]/g, " "),
+        strani: doc.getPageCount(),
+        stevilo_polj: stPolj,
+        b64: bajti.toString("base64"),
+      });
+    } catch (e) {
+      console.warn(`   ⚠️  ${d}: ${e.message} — ni vgrajen.`);
+    }
+  }
+  return izhod;
+}
+
 function klasicna(koda) {
   return `<script>\n${varnoZaHtml(koda)}\n</script>`;
 }
@@ -41,7 +80,7 @@ function modul(koda) {
   return `<script type="module">\n${varnoZaHtml(koda)}\n</script>`;
 }
 
-function zgradi() {
+async function zgradi() {
   const pdfjs = beri("node_modules", "pdfjs-dist", "legacy", "build", "pdf.min.mjs");
   const delavec = beri(
     "node_modules",
@@ -50,6 +89,8 @@ function zgradi() {
     "build",
     "pdf.worker.min.mjs"
   );
+
+  const obrazci = await vgrajeniObrazci();
 
   const skripte = [
     // Knjižnici sta UMD in se ob nalaganju zapišeta v window.
@@ -71,6 +112,8 @@ function zgradi() {
         "PISAVA_BAJTI"
       )
     ),
+    // Prazni obrazci, da ima orodje svoj seznam tudi brez omrežja.
+    klasicna(`window.VGRAJENI_OBRAZCI=${JSON.stringify(obrazci)};`),
     // Delavec si sam nastavi globalThis.pdfjsWorker; pdf.js ga zato ne prenaša.
     modul(delavec),
     modul(pdfjs),
@@ -89,7 +132,13 @@ function zgradi() {
 
   const mb = (fs.statSync(IZHOD).size / 1048576).toFixed(1);
   console.log(`✅ ${path.relative(KOREN, IZHOD)} (${mb} MB)`);
+  obrazci.forEach((o) =>
+    console.log(`   · ${o.ime} (${o.strani} str., ${o.stevilo_polj} polj)`)
+  );
   console.log("   Datoteko lahko pošlješ komurkoli — odpre se z dvoklikom.");
 }
 
-zgradi();
+zgradi().catch((e) => {
+  console.error("❌ " + e.message);
+  process.exit(1);
+});

@@ -1,12 +1,12 @@
 // zgradi-stran.cjs
 // Iz zgrajenega orodja sestavi mapo `dist/`, ki gre na GitHub Pages.
 //
-//   dist/index.html            samostojno orodje (ista datoteka za prenos)
-//   dist/obrazci/*.pdf         prazni uradni obrazci
-//   dist/obrazci/kazalo.json   seznam, iz katerega orodje izriše ploščice
+//   dist/index.html      samostojno orodje (ista datoteka tudi za prenos)
+//   dist/obrazci/*.pdf   prazni uradni obrazci za neposreden prenos
 //
-// Kazalo se prebere iz samih PDF-jev (število strani in polj), da ga ni
-// treba vzdrževati ročno - ko dodaš obrazec, se pojavi sam.
+// Obrazce, ki jih orodje ponuja v seznamu, ima vgrajene v sebi (glej
+// scripts/zgradi-orodje.cjs) - te kopije so tu samo zato, da je prazen
+// obrazec mogoče prenesti tudi brez orodja.
 
 const fs = require("fs");
 const path = require("path");
@@ -61,10 +61,6 @@ async function zgradi() {
   for (const o of obrazci) {
     fs.copyFileSync(path.join(OBRAZCI, o.datoteka), path.join(DIST, "obrazci", o.datoteka));
   }
-  fs.writeFileSync(
-    path.join(DIST, "obrazci", "kazalo.json"),
-    JSON.stringify({ posodobljeno: new Date().toISOString().slice(0, 10), obrazci }, null, 2)
-  );
 
   // Brez tega bi Pages mapo pognal skozi Jekyll in datoteke z močnimi
   // znaki v imenu bi lahko izpadle.

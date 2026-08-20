@@ -10,7 +10,10 @@
 }
 
 .glava-gumbi { display: flex; gap: 8px; flex-wrap: wrap; }
-.glava-gumbi .skrit { display: none; }
+/* Specifičnost mora presegati `a.gumb-tih.svetel` spodaj, sicer njegov
+   display: inline-block premaga skrivanje in gumb ostane viden. */
+.glava-gumbi .skrit,
+a.gumb-tih.svetel.skrit { display: none; }
 
 .gumb-tih.svetel {
   background: rgba(255, 255, 255, 0.14);
