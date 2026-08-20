@@ -80,7 +80,16 @@
       // pdfjs in pdf-lib dobita vsak svojo kopijo: pdfjs vhodni medpomnilnik
       // prevzame (detach) in izvirnik bi ostal prazen.
       const pdfjs = await window.naloziPdfJs();
-      if (pdfjsDoc) await pdfjsDoc.destroy();
+
+      // Prejšnji dokument zapremo, a ga NE čakamo: če je obtičal (npr. zaradi
+      // napake med branjem), bi čakanje nanj zaklenilo tudi vse nadaljnje
+      // poskuse in orodje bi obviselo na "Berem obrazec…".
+      if (pdfjsDoc) {
+        const prejsnji = pdfjsDoc;
+        pdfjsDoc = null;
+        prejsnji.destroy().catch(() => {});
+      }
+
       pdfjsDoc = await pdfjs.getDocument({
         data: izvorniBajti.slice(),
         useSystemFonts: true,
@@ -98,6 +107,9 @@
       izrisiObrazec();
       oznaciIzbranegaVKazalu(ime);
     } catch (e) {
+      // Ob napaki ne pustimo pol-odprtega dokumenta - naslednji poskus mora
+      // začeti na čisto.
+      pdfjsDoc = null;
       prikaziNapako("Obrazca ni bilo mogoče prebrati: " + e.message);
     }
   }

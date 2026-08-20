@@ -100,6 +100,48 @@
     </div>
 
     <script>
+      // --- Safari: asinhrona iteracija po ReadableStream ---
+      // pdf.js od različice 5.7 v getTextContent() piše `for await (const t of
+      // stream)`. WebKit tega ne podpira, zato v Safariju (Mac in iPad) branje
+      // obrazca odpove z "undefined is not a function (near '...t of e...')".
+      // Manjkajočo zmožnost dodamo sami; v brskalnikih, ki jo imajo, se ta
+      // koda ne izvede.
+      if (typeof ReadableStream !== "undefined" &&
+          !ReadableStream.prototype[Symbol.asyncIterator]) {
+        ReadableStream.prototype[Symbol.asyncIterator] = function (
+          { preventCancel = false } = {}
+        ) {
+          const bralec = this.getReader();
+          return {
+            async next() {
+              try {
+                const izid = await bralec.read();
+                if (izid.done) bralec.releaseLock();
+                return izid;
+              } catch (e) {
+                bralec.releaseLock();
+                throw e;
+              }
+            },
+            async return(vrednost) {
+              if (preventCancel) {
+                bralec.releaseLock();
+              } else {
+                const preklic = bralec.cancel(vrednost);
+                bralec.releaseLock();
+                await preklic;
+              }
+              return { done: true, value: vrednost };
+            },
+            [Symbol.asyncIterator]() {
+              return this;
+            },
+          };
+        };
+        ReadableStream.prototype.values =
+          ReadableStream.prototype[Symbol.asyncIterator];
+      }
+
       // pdfjs je v zgrajeni datoteki vgrajen kot modul (glej spodaj), delavec
       // pa teče kar na glavni niti - tako ni potreben noben zunanji vir in
       // stran deluje tudi, ko je odprta z dvoklikom (file://).

@@ -13,9 +13,9 @@
     "predogled": "node scripts/streznik.cjs"
   },
   "dependencies": {
-    "@pdf-lib/fontkit": "^1.1.1",
-    "dejavu-fonts-ttf": "^2.37.3",
-    "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.4.296"
+    "@pdf-lib/fontkit": "1.1.1",
+    "dejavu-fonts-ttf": "2.37.3",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "5.7.284"
   }
 }

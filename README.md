@@ -136,6 +136,18 @@ kjer isto logiko uporablja tudi strežniška različica. Popravke delaj tam in j
 prenesi z `npm run objavi`; sprememba neposredno tukaj bo ob naslednjem prenosu
 povožena.
 
+### Safari in ReadableStream
+
+pdf.js od 5.7 v `getTextContent()` uporablja `for await (const t of stream)`.
+WebKit asinhrone iteracije po `ReadableStream` ne podpira, zato bi v Safariju
+na Macu in iPadu branje obrazca odpovedalo z
+`undefined is not a function (near '...t of e...')`. Manjkajočo zmožnost doda
+polnilo v `orodje/predloga.html`; v brskalnikih, ki jo imajo, se ne izvede.
+
+Različice knjižnic so v `package.json` **pribite na točno številko**. Prav tiha
+posodobitev pdf.js s 5.4 na 5.7 je to napako prinesla, zato naj se zgodi le
+takrat, ko jo kdo namerno naredi in preizkusi.
+
 ### Kako to sploh deluje brez strežnika
 
 Vse knjižnice (pdf-lib, fontkit, pdf.js) in pisava so vgrajene v samo datoteko.
