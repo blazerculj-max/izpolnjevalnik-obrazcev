@@ -95,16 +95,29 @@ prenašati zraven. Poljuben drug obrazec preprosto povlečeš nanjo.
 Seznam se sestavi sam iz datotek, zato ga ni treba nikjer vzdrževati. Če je
 repozitorij objavljen, GitHub Actions stran zgradi in objavi ob commitu.
 
+## Zagon
+
+Strežnika ni in ga ne rabiš — orodje je ena datoteka:
+
+```bash
+npm start
+```
+
+To jo zgradi na novo in odpre. Enak učinek ima dvoklik na
+`public/orodje-obrazci.html` v Finderju; datoteko lahko premakneš kamorkoli,
+tudi na namizje ali ključek, in bo delovala naprej.
+
 ## Razvoj
 
 ```bash
 npm install
-npm run zgradi      # zgradi orodje in mapo dist/
-npm run predogled   # http://localhost:4173
+npm run orodje      # samo zgradi datoteko
+npm run zgradi      # zgradi tudi mapo dist/ za GitHub Pages
+npm run predogled   # http://localhost:4173 - predogled različice za Pages
 ```
 
-Predogled prek strežnika je pomemben: seznam obrazcev se nalaga s `fetch`,
-ki pri odpiranju z dvoklikom (`file://`) ne deluje.
+Predogled rabiš le, če pripravljaš objavo na Pages — za vsakdanjo rabo je
+dovolj `npm start`.
 
 ### Kje je kaj
 

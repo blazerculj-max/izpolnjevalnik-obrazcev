@@ -6,3 +6,6 @@ public/orodje-obrazci.html
 # Git pomni vse - izbris jih iz zgodovine ne odstrani.
 data/izpolnjeni/
 *-izpolnjen.pdf
+
+# macOS
+.DS_Store

@@ -6,6 +6,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "start": "npm run orodje && open public/orodje-obrazci.html",
     "orodje": "node scripts/zgradi-orodje.cjs",
     "stran": "node scripts/zgradi-stran.cjs",
     "zgradi": "npm run orodje && npm run stran",
