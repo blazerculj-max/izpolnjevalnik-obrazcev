@@ -1,0 +1,16 @@
+{
+  "name": "Izpolnjevalnik obrazcev",
+  "short_name": "Obrazci",
+  "description": "Izpolnjevanje PDF obrazcev s podpisom stranke — brez povezave, vse ostane na napravi.",
+  "lang": "sl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#14508c",
+  "icons": [
+    { "src": "ikona-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "ikona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "ikona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

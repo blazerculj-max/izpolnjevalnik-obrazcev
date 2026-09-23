@@ -97,6 +97,27 @@ Gumb **Prenesi za brez povezave** shrani celo orodje kot **eno datoteko HTML**
 povsem odklopljeni napravi — ni je treba nikamor priklopiti in nič ni treba
 prenašati zraven. Poljuben drug obrazec preprosto povlečeš nanjo.
 
+## Namestitev kot aplikacija (PWA)
+
+Ko je stran objavljena, jo je mogoče namestiti in od takrat deluje **brez
+povezave**, z lastno ikono in brez naslovne vrstice:
+
+- **iPad / iPhone**: Safari → Deli → *Dodaj na začetni zaslon*
+- **Mac**: Safari → Datoteka → *Dodaj v Dock* (ali v Chromu *Namesti aplikacijo*)
+
+Za to skrbijo `pwa/manifest.webmanifest`, `pwa/sw.js` in ikone, ki jih nariše
+`npm run ikone` (brez zunanjih knjižnic; iOS v manifestu ne sprejme SVG).
+
+Service worker ob prvem obisku shrani orodje, obrazce pa ima orodje itak v
+sebi. Ime predpomnilnika je **zgoščena vrednost zgrajene datoteke**, zato ob
+novi različici stari predpomnilnik odpade — brez tega bi uporabniki za vedno
+ostali na stari datoteki.
+
+> CSP je zaradi tega dobil `manifest-src 'self'` in `worker-src 'self'`.
+> Nobeno od tega ne odpira poti za pošiljanje podatkov — to ostaja zaprto pri
+> `connect-src 'none'`. Service worker pa je nova koda, ki teče ob strani;
+> naš samo shranjuje datoteke z istega naslova.
+
 ## Razdeljevanje: .dmg za Mac
 
 ```bash

@@ -3,6 +3,8 @@
 //
 //   dist/index.html      samostojno orodje (ista datoteka tudi za prenos)
 //   dist/obrazci/*.pdf   prazni uradni obrazci za neposreden prenos
+//   dist/manifest.webmanifest, dist/sw.js, dist/ikona-*.png
+//                        da je stran mogoče namestiti kot aplikacijo (PWA)
 //
 // Obrazce, ki jih orodje ponuja v seznamu, ima vgrajene v sebi (glej
 // scripts/zgradi-orodje.cjs) - te kopije so tu samo zato, da je prazen
@@ -10,12 +12,14 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { PDFDocument } = require("pdf-lib");
 
 const KOREN = path.join(__dirname, "..");
 const ORODJE = path.join(KOREN, "public", "orodje-obrazci.html");
 const OBRAZCI = path.join(KOREN, "data", "obrazci");
 const DIST = path.join(KOREN, "dist");
+const PWA = path.join(KOREN, "pwa");
 
 async function kazaloObrazcev() {
   if (!fs.existsSync(OBRAZCI)) return [];
@@ -62,11 +66,30 @@ async function zgradi() {
     fs.copyFileSync(path.join(OBRAZCI, o.datoteka), path.join(DIST, "obrazci", o.datoteka));
   }
 
+  // Manifest, ikone in service worker gredo v koren, da so poti v manifestu
+  // preproste in da service worker pokriva celo stran.
+  const razlicica =
+    "v" +
+    crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(ORODJE))
+      .digest("hex")
+      .slice(0, 12);
+  for (const d of fs.readdirSync(PWA)) {
+    const vsebina = fs.readFileSync(path.join(PWA, d));
+    // Ime predpomnilnika veže na vsebino orodja: ob novi različici se stari
+    // predpomnilnik zavrže, sicer bi uporabnik obtičal na stari datoteki.
+    fs.writeFileSync(
+      path.join(DIST, d),
+      d === "sw.js" ? String(vsebina).replace("__RAZLICICA__", razlicica) : vsebina
+    );
+  }
+
   // Brez tega bi Pages mapo pognal skozi Jekyll in datoteke z močnimi
   // znaki v imenu bi lahko izpadle.
   fs.writeFileSync(path.join(DIST, ".nojekyll"), "");
 
-  console.log(`✅ dist/ — ${obrazci.length} obrazcev`);
+  console.log(`✅ dist/ — ${obrazci.length} obrazcev, različica ${razlicica}`);
   obrazci.forEach((o) => console.log(`   · ${o.ime} (${o.strani} str., ${o.stevilo_polj} polj)`));
 }
 

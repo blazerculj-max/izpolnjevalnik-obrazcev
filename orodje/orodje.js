@@ -178,6 +178,17 @@
       .forEach((b) => b.classList.toggle("izbran", b.dataset.datoteka === ime));
   }
 
+  // Service worker shrani orodje, da se nameščena aplikacija odpre tudi brez
+  // povezave. Smiseln je le na spletu; iz datoteke (file://) ga ni mogoče
+  // registrirati in tam tudi ni potreben - vse je že v datoteki.
+  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {
+        /* brez njega orodje deluje, le brez povezave se ne zažene */
+      });
+    });
+  }
+
   // Kopija za delo brez povezave ima smisel le, kadar orodje stoji na spletu.
   const prenesiEl = document.getElementById("prenesi-orodje");
   if (prenesiEl && /^https?:$/.test(location.protocol)) {

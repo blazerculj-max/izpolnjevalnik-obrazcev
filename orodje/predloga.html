@@ -15,6 +15,8 @@
       `form-action 'none'` pomeni, da obrazca ni mogoče nikamor oddati.
       `frame-src blob:` rabi predogled izvoženega PDF-ja: brskalnik ga odpre
       v vgnezdenem pregledovalniku, torej kot okvir, ne kot navaden predmet.
+      `manifest-src` in `worker-src` rabi nameščena različica (PWA); ne
+      odpirata poti za pošiljanje podatkov - to ostaja pri connect-src.
       Skripte in slogi so vgnezdeni, zato je zanje potreben 'unsafe-inline';
       pri odtekanju podatkov pa odloča connect-src, ne script-src.
     -->
@@ -27,10 +29,22 @@
                object-src blob:;
                frame-src blob:;
                connect-src 'none';
+               manifest-src 'self';
+               worker-src 'self';
                form-action 'none';
                base-uri 'none';"
     />
     <meta name="referrer" content="no-referrer" />
+
+    <!-- Nameščena aplikacija (PWA). V enodatotečni različici teh virov ni in
+         brskalnik jih preprosto ne najde - to ničesar ne pokvari. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="ikona-180.png" />
+    <meta name="theme-color" content="#14508c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Obrazci" />
     <!--
       To je predloga. Uporabna različica nastane z `npm run orodje`, ki vanjo
       vgradi knjižnice, pisavo in kodo, tako da je datoteka samostojna in
