@@ -872,6 +872,11 @@
   const platno = document.getElementById("platno-podpisa");
   const ctx = platno.getContext("2d");
   const gumbZacni = document.getElementById("zacni-risanje");
+  // Na zaslonu na dotik se preprosto podpišeš - prostoročni način je tam
+  // odveč in samo zastira pot. Potreben je le tam, kjer je edino kazalo
+  // sledilna ploščica ali miška.
+  const jeNaDotik = window.matchMedia("(any-pointer: coarse)").matches;
+  if (jeNaDotik) gumbZacni.classList.add("skrit");
   const namigPodpisa = document.getElementById("namig-podpisa");
   let rise = false;
   let jePodpisan = false;
@@ -917,6 +922,11 @@
     document.getElementById("naslov-podpisa").textContent = pas
       ? pas.naziv
       : "Podpis stranke";
+    namigPodpisa.innerHTML = jeNaDotik
+      ? "Podpiši se s prstom ali peresom. Ko končaš, izberi <strong>Potrdi</strong> " +
+        "ali <strong>Ponovi</strong>."
+      : "Klikni <strong>Začni risanje</strong> — potem le drsiš s prstom po " +
+        "sledilni ploščici, brez pritiskanja.";
     oknoPodpisa.classList.remove("skrit");
     pocistiPlatno();
   }
@@ -1155,7 +1165,9 @@
 
   document.getElementById("pocisti-podpis").addEventListener("click", () => {
     pocistiPlatno();
-    zacniProstorocno(); // "Ponovi" naj takoj omogoči novo risanje
+    // Na dotik je platno takoj pripravljeno; drugod "Ponovi" znova zažene
+    // prostoročni način, da ni treba dvakrat klikati.
+    if (!jeNaDotik) zacniProstorocno();
   });
   document.getElementById("preklici-podpis").addEventListener("click", () => {
     koncajProstorocno();

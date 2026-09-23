@@ -541,3 +541,6 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
   box-shadow: 0 0 0 4px var(--modra-svetla);
 }
 #platno-podpisa.pero-gor + .znak-izhodisca { background: var(--modra); }
+
+/* Prostoročni način je potreben le ob sledilni ploščici; na dotik ga skrijemo. */
+#zacni-risanje.skrit { display: none; }
