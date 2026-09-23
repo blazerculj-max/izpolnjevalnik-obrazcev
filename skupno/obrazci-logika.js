@@ -139,49 +139,103 @@
         .replace(/\s+/g, " ")
         .trim();
 
+    /**
+     * Oznaka polja je besedilo, ki mu je NAJBLIŽE - vodoravno in navpično
+     * hkrati. Same "najbližje vrstice" ne zadoščajo: v tabeli Opredelitve je
+     * trditev res v isti vrstici, a 192 pt stran, ime produkta pa 90 pt stran
+     * in eno vrstico više. Navpično razdaljo zato tehtamo trikrat.
+     *
+     * Leva stran ima majhno prednost, ker napis na obrazcih praviloma stoji
+     * PRED poljem.
+     */
+    const TEZA_NAVPICNO = 3;
+    const PREDNOST_LEVE = 0.8;
     const cy = r.y + r.height / 2;
 
-    /**
-     * Oznaka polja stoji v NJEGOVI vrstici, ne vrstico više: pas je namenoma
-     * širok zaradi večvrstičnih trditev, zato bi sicer vanj padel naslov
-     * razdelka nad poljem. Zato najprej poiščemo najbližjo vrstico besedila,
-     * v njej pa odsek, ki je vodoravno najbliže polju - ne najdaljšega.
-     */
-    const izberi = (kandidati, razdalja) => {
+    const oceni = (o, vrzel) => vrzel + TEZA_NAVPICNO * Math.abs(o.y - cy);
+
+    const izberi = (kandidati, vrzelDo, utez) => {
       if (!kandidati.length) return null;
-      const najblizjaVrstica = Math.min(...kandidati.map((o) => Math.abs(o.y - cy)));
-      const vVrstici = kandidati.filter(
-        (o) => Math.abs(o.y - cy) - najblizjaVrstica < 6
+      const sidro = kandidati.reduce((a, b) =>
+        oceni(b, vrzelDo(b)) < oceni(a, vrzelDo(a)) ? b : a
       );
-      const sidro = vVrstici.reduce((a, b) => (razdalja(b) < razdalja(a) ? b : a));
-      // Večvrstične oznake nadaljujemo po istem stolpcu, a le v tem pasu.
-      const stolpec = kandidati.filter((o) => Math.abs(o.od - sidro.od) < 25);
+      // Večvrstične oznake nadaljujemo po istem stolpcu.
+      const stolpec = vPasu.filter((o) => Math.abs(o.od - sidro.od) < 25);
       let besedilo = zdruzi(stolpec);
 
-      // Stolpčna oznaka ("IZ", "NA" v tabeli sprememb) sama zase ne pove, česa
-      // se sprememba tiče. Pred njo zato postavimo besedilo z začetka vrstice.
-      if (besedilo.length <= 3) {
-        const zacetek = vVrstici.reduce((a, b) => (b.od < a.od ? b : a));
+      // Stolpčna oznaka ("IZ", "NA" v tabeli sprememb) sama zase ne pove,
+      // česa se sprememba tiče; predenjo postavimo začetek vrstice.
+      if (besedilo.length <= 2) {
+        const vVrstici = kandidati.filter((o) => Math.abs(o.y - sidro.y) < 3);
+        const zacetek = vVrstici.reduce((a, b) => (b.od < a.od ? b : a), sidro);
         if (zacetek !== sidro && zacetek.besedilo.length > 3) {
           besedilo = zacetek.besedilo + " — " + besedilo;
         }
       }
-      return { besedilo, razdalja: razdalja(sidro) };
+      return {
+        besedilo,
+        vrzel: vrzelDo(sidro),
+        ocena: oceni(sidro, vrzelDo(sidro)) * utez,
+      };
     };
 
     const levo = izberi(
       vPasu.filter((o) => o.do <= r.x + 2),
-      (o) => r.x - o.do
+      (o) => r.x - o.do,
+      PREDNOST_LEVE
     );
+    // Desno besedilo omejimo z naslednjim poljem v isti vrstici: kar stoji za
+    // njim, je njegova oznaka, ne naša. Brez tega "Datum" pobere pojasnilo
+    // polja KZZ, ki stoji tik za njim.
+    const mejaDesno = vsaPolja
+      .filter(
+        (d) =>
+          d !== polje &&
+          d.stran === polje.stran &&
+          d.pravokotnik &&
+          d.pravokotnik.x > r.x + r.width &&
+          Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 10
+      )
+      .reduce((n, d) => Math.min(n, d.pravokotnik.x), Infinity);
+
+    // Napis, ki se prekriva z drugim poljem, je njegov, ne naš: pojasnilo
+    // "kzz št. (obvezen podatek ...)" leži nad poljem KZZ, a se začne tik za
+    // poljem Datum.
+    const jeTujNapis = (o) =>
+      vsaPolja.some(
+        (d) =>
+          d !== polje &&
+          d.stran === polje.stran &&
+          d.pravokotnik &&
+          Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 10 &&
+          d.pravokotnik.x < o.do &&
+          d.pravokotnik.x + d.pravokotnik.width > o.od
+      );
+
     const desno = izberi(
-      vPasu.filter((o) => o.od >= r.x + r.width - 2),
-      (o) => o.od - (r.x + r.width)
+      vPasu.filter(
+        (o) =>
+          o.od >= r.x + r.width - 2 &&
+          o.od < mejaDesno &&
+          !jeTujNapis(o) &&
+          // Enota za poljem ("LET", "EUR") ni oznaka polja.
+          !/^(LET|EUR|KG|CM|MM|%)\b/.test(o.besedilo)
+      ),
+      (o) => o.od - (r.x + r.width),
+      1
     );
 
-    // Na obrazcih oznaka skoraj vedno stoji PRED poljem; desno je pogosto že
-    // enota ali oznaka sosednjega polja. Zato ima leva stran prednost.
-    if (levo && levo.besedilo) return levo.besedilo;
-    return desno && desno.besedilo ? desno.besedilo : null;
+    if (!levo) return desno ? desno.besedilo : null;
+    if (!desno) return levo.besedilo;
+
+    // V tabeli Opredelitve stoji ime produkta med obema stolpcema okenc in je
+    // okencu v stolpcu POTREBE celo bližje (29 pt) od trditve (48 pt). Zgolj
+    // razdalja ju torej ne loči. Loči pa ju dolžina: cela poved na levi je
+    // trditev, kratek napis pa je lahko le naslov razdelka.
+    if (levo.besedilo.length > 25 && levo.vrzel < 200) return levo.besedilo;
+
+    return desno.ocena < levo.ocena ? desno.besedilo : levo.besedilo;
+
   }
 
   /**
@@ -486,7 +540,7 @@
       deli.push(k.besedilo);
       zadnji = k;
     }
-    return deli.join(" ");
+    return pocisti(deli.join(" "));
   }
 
   /** Napis z obrazca: odveč presledki pred ločili in velika začetnica. */
@@ -557,9 +611,25 @@
     return { enota: ujem[1], pripomba: pocisti(ujem[2]) || null };
   }
 
+  // Napisi ob robu strani so prelomljeni čez več vrstic, včasih sredi besede
+  // in brez vezaja. Samodejno tega ni mogoče zanesljivo ugotoviti: odlomek
+  // "zavaro" se v telesu Opredelitve pojavi enkrat (torej bi veljal za besedo),
+  // beseda "Seznanitev" v Ponudbi pa prav tako enkrat - pravilo, ki bi zlepilo
+  // prvo, bi pokvarilo drugo. Zato popravke naštejemo; seznam je kratek in ga
+  // je ob novem obrazcu lahko dopolniti.
+  const PRELOMLJENE_BESEDE = [
+    [/zavaro valca/gi, "zavarovalca"],
+    [/zavaro valčevih/gi, "zavarovalčevih"],
+    [/poda nih/gi, "podanih"],
+  ];
+
+  function zlepiPrelomljene(niz) {
+    return PRELOMLJENE_BESEDE.reduce((t, [vzorec, cela]) => t.replace(vzorec, cela), niz);
+  }
+
   /** Odveč ločila in presledki ob oznakah iz PDF-ja. */
   function pocisti(niz) {
-    return String(niz || "")
+    return zlepiPrelomljene(String(niz || ""))
       .replace(/\s+/g, " ")
       .replace(/^[\s:.,;*-]+|[\s:.,;*-]+$/g, "")
       .trim();
