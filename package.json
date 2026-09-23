@@ -9,6 +9,7 @@
     "start": "npm run orodje && open public/orodje-obrazci.html",
     "orodje": "node scripts/zgradi-orodje.cjs",
     "stran": "node scripts/zgradi-stran.cjs",
+    "dmg": "node scripts/zgradi-dmg.cjs",
     "zgradi": "npm run orodje && npm run stran",
     "predogled": "node scripts/streznik.cjs"
   },

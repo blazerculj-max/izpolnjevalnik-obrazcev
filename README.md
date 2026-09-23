@@ -97,6 +97,29 @@ Gumb **Prenesi za brez povezave** shrani celo orodje kot **eno datoteko HTML**
 povsem odklopljeni napravi — ni je treba nikamor priklopiti in nič ni treba
 prenašati zraven. Poljuben drug obrazec preprosto povlečeš nanjo.
 
+## Razdeljevanje: .dmg za Mac
+
+```bash
+npm run dmg
+```
+
+Nastane `dist/Izpolnjevalnik obrazcev.dmg` (~2,2 MB). Prejemnik dvoklikne
+sliko in nato HTML v njej — to je vse.
+
+V sliki je **dokument, ne aplikacija**, in prav to je bistvo: aplikacijo brez
+Applovega podpisa in notarizacije macOS ob prenosu zavrne, dokumenta pa ne.
+Tako orodje razdeliš brez razvijalskega računa in brez opozoril. Preverjeno:
+sliki nastavimo oznako »preneseno s Safarijem«, se priklopi normalno, HTML v
+njej pa oznake karantene sploh ne dobi.
+
+Povrhu je slika **manjša od same datoteke** (2,2 MB proti 4,3 MB) in gre skozi
+poštne filtre, ki priponke `.html` pogosto zavrnejo.
+
+> Za pravo aplikacijo z lastno ikono v Docku (in za iPad) je potreben
+> Apple Developer Program. Brez njega je nepodpisana aplikacija slabša izkušnja
+> od te slike — macOS jo blokira, uporabnik pa jo mora ročno odobriti v
+> Nastavitvah.
+
 ## Dodajanje obrazca
 
 1. PDF daj v `data/obrazci/` (mora biti »aktiven«, torej z vnosnimi polji).
