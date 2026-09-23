@@ -208,12 +208,14 @@
 
   /** Besedilo strani s koordinatami - vhod za skupno logiko oznak. */
   async function preberiBesediloSKoordinatami(doc) {
+    const pdfjs = await window.naloziPdfJs();
     const strani = [];
     for (let i = 1; i <= doc.numPages; i++) {
       const stran = await doc.getPage(i);
       const vsebina = await stran.getTextContent();
       strani.push({
         stran: i,
+        okvirji: await okvirjiStrani(pdfjs, stran),
         kosi: vsebina.items
           .filter((x) => x.str && x.str.trim())
           .map((x) => ({
@@ -227,6 +229,24 @@
     return strani;
   }
 
+  /**
+   * Okvirji, ki jih obrazec nariše (celice tabel) - vanje postavimo podpis in
+   * šifro. pdf.js pri vsaki poti poda očrtni pravokotnik, zato poti ni treba
+   * razvozlavati.
+   */
+  async function okvirjiStrani(pdfjs, stran) {
+    const ops = await stran.getOperatorList();
+    const izhod = [];
+    ops.fnArray.forEach((f, i) => {
+      if (f !== pdfjs.OPS.constructPath) return;
+      const meja = ops.argsArray[i][2];
+      if (!meja) return;
+      const [x0, y0, x1, y1] = Array.from(meja);
+      izhod.push({ x: x0, y: y0, sirina: x1 - x0, visina: y1 - y0 });
+    });
+    return izhod;
+  }
+
   // ------------------------------------------------------------- podpisna mesta
 
   /** Iz napisov na obrazcu ("PODPIS ZAVAROVALCA") pripravimo mesta za podpise. */
@@ -238,7 +258,10 @@
       stran: m.stran,
       x: m.x,
       y: m.y,
-      sirina: 22,
+      // Privzeta velikost je taka, da podpis sede v okvir na obrazcu.
+      sirina: Math.round(m.najvecSirina || 22),
+      najvecVisina: m.najvecVisina || null,
+      mestoSifre: m.sifra || null,
       slika: null,
       potrebujeSifro: !!m.potrebujeSifro,
       zaProdajnika: !!m.zaProdajnika,
@@ -770,7 +793,11 @@
         x: p.x,
         y: p.y,
         sirina: p.sirina,
+        najvecVisina: p.najvecVisina,
         besedilo: p.sifra || null,
+        // Šifra gre v okvir, ob napis "šifra in podpis prodajnika".
+        besedilo_x: p.mestoSifre ? p.mestoSifre.x : null,
+        besedilo_y: p.mestoSifre ? p.mestoSifre.y : null,
       }));
 
     stanje.textContent = "Pripravljam…";

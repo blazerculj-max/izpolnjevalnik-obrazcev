@@ -328,8 +328,19 @@
         try {
           const png = await doc.embedPng(String(podpis.slika));
           const stran = doc.getPages()[Math.max(0, (podpis.stran || 1) - 1)];
-          const sirina = ((podpis.sirina || 24) / 100) * stran.getWidth();
-          const visina = (sirina / png.width) * png.height;
+          let sirina = ((podpis.sirina || 24) / 100) * stran.getWidth();
+          let visina = (sirina / png.width) * png.height;
+
+          // Podpis naj ne prerase okenca, v katerem stoji. Če je previsok, ga
+          // pomanjšamo - a ne pod polovico, sicer postane neberljiv drobiž.
+          if (podpis.najvecVisina) {
+            const dovoljeno = (podpis.najvecVisina / 100) * stran.getHeight();
+            if (visina > dovoljeno) {
+              const faktor = Math.max(dovoljeno / visina, 0.5);
+              sirina *= faktor;
+              visina *= faktor;
+            }
+          }
           // Točka, kamor je zastopnik povlekel podpis, je njegovo SREDIŠČE.
           const sredinaX = ((podpis.x ?? 50) / 100) * stran.getWidth();
           const sredinaY = ((podpis.y ?? 80) / 100) * stran.getHeight();
@@ -338,11 +349,16 @@
           const y = stran.getHeight() - sredinaY - visina / 2;
           stran.drawImage(png, { x, y, width: sirina, height: visina });
 
-          // Šifra prodajnika se izpiše nad njegov podpis
+          // Šifra prodajnika: če obrazec ima okvir z napisom, jo postavimo
+          // tja (ob napis), sicer nad podpis kot doslej.
           if (podpis.besedilo && pisava) {
+            const imaMesto =
+              podpis.besedilo_x !== null && podpis.besedilo_x !== undefined;
             stran.drawText(String(podpis.besedilo), {
-              x,
-              y: y + visina + 2,
+              x: imaMesto ? (podpis.besedilo_x / 100) * stran.getWidth() : x,
+              y: imaMesto
+                ? stran.getHeight() - (podpis.besedilo_y / 100) * stran.getHeight()
+                : y + visina + 2,
               size: 9,
               font: pisava,
             });

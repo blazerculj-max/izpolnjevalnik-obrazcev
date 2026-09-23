@@ -206,17 +206,80 @@
         if (!/\bpodpis\b/i.test(t)) continue;
         if (t.length > 46) continue; // odstavek, ne napis polja
         if (/\bs podpisom\b|podpisane|podpisani/i.test(t)) continue;
+
+        const okvir = najdiOkvirNapisa(s.okvirji, o);
         najdeni.push({
           naziv: t.replace(/\*/g, "").trim(),
           stran: s.stran,
-          x: ((o.od + o.do) / 2 / mere.sirina) * 100,
-          y: ((mere.visina - o.y + 24) / mere.visina) * 100,
           potrebujeSifro: /šifra|sifra/i.test(t),
           zaProdajnika: /prodajnik|zastopnik|posrednik/i.test(t),
+          ...mestoVOkviru(o, okvir, mere),
         });
       }
     });
     return najdeni;
+  }
+
+  /** Najtesnejši narisan okvir, ki obdaja ta napis (celica tabele). */
+  function najdiOkvirNapisa(okvirji, napis) {
+    if (!Array.isArray(okvirji)) return null;
+    return (
+      okvirji
+        .filter(
+          (r) =>
+            r.sirina > 40 &&
+            r.visina > 15 &&
+            r.sirina < 560 &&
+            r.visina < 200 &&
+            r.x <= napis.od + 2 &&
+            r.x + r.sirina >= napis.do - 2 &&
+            r.y <= napis.y + 2 &&
+            r.y + r.visina >= napis.y + 6
+        )
+        .sort((a, b) => a.sirina * a.visina - b.sirina * b.visina)[0] || null
+    );
+  }
+
+  /**
+   * Kam v okvir postaviti podpis in šifro.
+   * Podpis gre POD napis, na sredino preostanka okvira; šifra pa kar ob napis,
+   * v isto vrstico - tam jo obrazec pričakuje ("ŠIFRA IN PODPIS PRODAJNIKA").
+   * Brez najdenega okvira ostane staro ravnanje: malo pod napisom.
+   */
+  function mestoVOkviru(napis, okvir, mere) {
+    const vOdstotkihX = (x) => (x / mere.sirina) * 100;
+    const vOdstotkihY = (y) => ((mere.visina - y) / mere.visina) * 100;
+
+    if (!okvir) {
+      return {
+        x: vOdstotkihX((napis.od + napis.do) / 2),
+        y: vOdstotkihY(napis.y - 24),
+        okvir: null,
+        sifra: null,
+        najvecSirina: 22,
+        najvecVisina: null,
+      };
+    }
+
+    const rob = 4;
+    const prostor = napis.y - okvir.y - rob; // višina pod napisom, v točkah
+    return {
+      x: vOdstotkihX(okvir.x + okvir.sirina / 2),
+      y: vOdstotkihY(okvir.y + Math.max(prostor, 6) / 2),
+      okvir: {
+        x: vOdstotkihX(okvir.x),
+        y: vOdstotkihY(okvir.y + okvir.visina),
+        sirina: (okvir.sirina / mere.sirina) * 100,
+        visina: (okvir.visina / mere.visina) * 100,
+      },
+      // Šifra gre tik za napis, v njegovo vrstico.
+      sifra: {
+        x: vOdstotkihX(Math.min(napis.do + 6, okvir.x + okvir.sirina - 30)),
+        y: vOdstotkihY(napis.y),
+      },
+      najvecSirina: ((okvir.sirina - 2 * rob) / mere.sirina) * 100,
+      najvecVisina: (Math.max(prostor, 6) / mere.visina) * 100,
+    };
   }
 
   /** Stolpci potrditvenih polj: navpične kolone z isto glavo (DA / NE). */
