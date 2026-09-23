@@ -343,7 +343,8 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
   border: 1px solid var(--modra-rob); border-radius: 5px;
   padding: 1px 8px; font-size: 11.5px; font-weight: 650;
 }
-.odgovor-gumbi { display: flex; gap: 6px; flex: none; }
+.odgovor-gumbi { display: flex; gap: 6px; flex: 0 1 auto; flex-wrap: wrap; }
+.odgovor-gumb { max-width: 100%; }
 .odgovor-gumb {
   min-width: 52px; padding: 8px 12px; border-radius: 8px;
   border: 1px solid var(--meja); background: #fff; color: var(--pridusen);
@@ -358,6 +359,15 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
   border-color: var(--modra);
   color: #fff;
   font-weight: 650;
+}
+/* Možnosti, ki so cele povedi: gumbi gredo pod trditev in se prelomijo. */
+.vrstica-odgovora.naslozeno { flex-direction: column; align-items: stretch; gap: 8px; }
+.naslozeno .odgovor-gumbi { flex-direction: column; justify-content: flex-start; }
+.naslozeno .odgovor-gumb {
+  text-align: left;
+  white-space: normal;
+  line-height: 1.45;
+  font-weight: 600;
 }
 .odgovor-gumb.da.izbran {
   background: var(--zelena); border-color: var(--zelena); color: #fff;

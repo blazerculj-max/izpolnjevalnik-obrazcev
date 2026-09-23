@@ -219,7 +219,7 @@
         kosi: vsebina.items
           .filter((x) => x.str && x.str.trim())
           .map((x) => ({
-            besedilo: x.str.trim(),
+            besedilo: window.ObrazciLogika.popraviZnake(x.str).trim(),
             x: x.transform[4],
             y: x.transform[5],
             w: x.width,
@@ -455,7 +455,10 @@
           >${escapeHtml(m.oznaka)}</button>`;
       })
       .join("");
-    return `<div class="polje sirok vrstica-odgovora" data-id="${i.id}">
+    // Kadar so možnosti cele povedi (izjave), jih postavimo POD trditev in
+    // jim pustimo prelom - sicer razpotegnejo vrstico čez rob.
+    const dolge = i.moznosti.some((m) => m.oznaka.length > 28);
+    return `<div class="polje sirok vrstica-odgovora${dolge ? " naslozeno" : ""}" data-id="${i.id}">
         <div class="vrstica-besedilo">
           ${i.razdelek ? `<span class="znacka-razdelek">${escapeHtml(i.razdelek)}</span>` : ""}
           <span class="vrstica-trditev">${escapeHtml(i.oznaka)}</span>

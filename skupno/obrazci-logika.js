@@ -753,6 +753,24 @@
     return izhod.sort((a, b) => a.stran - b.stran || a.y - b.y);
   }
 
+  // Nekateri obrazci nimajo prave preslikave v Unicode in vrnejo kar bajte
+  // kodne strani Windows-1250. Ti pristanejo v območju nadzornih znakov
+  // U+0080..U+009F, kjer pravega besedila nikoli ni - zato jih smemo
+  // preslikati nazaj. Brez tega se "dolžnik" izpiše kot "dol?nik".
+  const WIN1250 = {
+    0x80: "€", 0x82: "‚", 0x84: "„", 0x85: "…", 0x86: "†", 0x87: "‡",
+    0x89: "‰", 0x8a: "Š", 0x8b: "‹", 0x8c: "Ś", 0x8d: "Ť", 0x8e: "Ž",
+    0x8f: "Ź", 0x91: "‘", 0x92: "’", 0x93: "“", 0x94: "”", 0x95: "•",
+    0x96: "–", 0x97: "—", 0x99: "™", 0x9a: "š", 0x9b: "›", 0x9c: "ś",
+    0x9d: "ť", 0x9e: "ž", 0x9f: "ź",
+  };
+
+  /** Popravi znake, ki jih je PDF vrnil kot bajte Windows-1250. */
+  function popraviZnake(niz) {
+    if (!niz) return niz;
+    return String(niz).replace(/[\u0080-\u009F]/g, (z) => WIN1250[z.charCodeAt(0)] || "");
+  }
+
   /** Ali je ime polja neuporabno ("Checkbox7") in naj raje vzamemo besedilo? */
   function imeJeNeuporabno(ime) {
     return /^(check ?box|text ?field|polje|field)\s*\d*$/i.test(ime);
@@ -767,6 +785,7 @@
     zdruziVVrstice,
     zdruziVIzbire,
     najdiRazdelke,
+    popraviZnake,
     izberiOznako,
     pocistiNapis,
     imeJeNeuporabno,
