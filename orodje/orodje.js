@@ -258,8 +258,9 @@
       stran: m.stran,
       x: m.x,
       y: m.y,
-      // Privzeta velikost je taka, da podpis sede v okvir na obrazcu.
-      sirina: Math.round(m.najvecSirina || 22),
+      // Privzeta širina podpisa; okvir na obrazcu jo lahko le zmanjša,
+      // da podpis vanj sede.
+      sirina: Math.round(Math.min(PRIVZETA_SIRINA_PODPISA, m.najvecSirina || PRIVZETA_SIRINA_PODPISA)),
       najvecVisina: m.najvecVisina || null,
       mestoSifre: m.sifra || null,
       slika: null,
@@ -645,8 +646,13 @@
     );
   }
 
+  // Hiter preklop obrazca ali strani prekine izris; s tem števcem vemo,
+  // ali je naš izris še aktualen.
+  let zaporednaIzrisa = 0;
+
   /** Stran izrišemo s pdfjs - podpise nanjo postavimo z vlečenjem. */
   async function izrisiMestoPodpisa(stran) {
+    const mojIzris = ++zaporednaIzrisa;
     const ovoj = document.getElementById("podpis-mesto");
     if (!ovoj || !pdfjsDoc) return;
     ovoj.dataset.stran = String(stran);
@@ -663,9 +669,17 @@
     const koncni = p.getViewport({ scale: merilo });
     platnoStrani.width = Math.round(koncni.width);
     platnoStrani.height = Math.round(koncni.height);
-    await p.render({ canvasContext: platnoStrani.getContext("2d"), viewport: koncni })
-      .promise;
+    try {
+      await p.render({
+        canvasContext: platnoStrani.getContext("2d"),
+        viewport: koncni,
+      }).promise;
+    } catch {
+      // pdf.js ob preklopu izris prekine (RenderingCancelledException).
+      // Oznake podpisov moramo izrisati tudi tedaj, sicer izginejo.
+    }
 
+    if (mojIzris !== zaporednaIzrisa) return; // vmes se je začel novejši
     izrisiZnakePodpisov();
   }
 
@@ -881,6 +895,9 @@
   let casovnikOdstevanja = null;
   let pero = null; // navidezno pero: { x, y } v koordinatah platna
   let zadnjiKazalec = null; // za računanje premika
+  // Privzeta širina podpisa v odstotkih širine strani; zastopnik jo lahko
+  // popravi z drsnikom.
+  const PRIVZETA_SIRINA_PODPISA = 17;
   const MIROVANJE_MS = 2000;
   // Kratka pavza dvigne ali spusti pero: tako lahko napišeš ime in priimek
   // ločeno ali dodaš strešico, ne da bi vlekel neprekinjeno črto.
