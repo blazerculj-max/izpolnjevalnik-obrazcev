@@ -16,6 +16,10 @@
   "use strict";
 
   const VRZEL_STOLPCA = 16; // pt vodoravne vrzeli, ki loči dva stolpca
+  // Nekateri obrazci pišejo šumnike kot ločene koščke ("mese" + "č" + "na"),
+  // ki se skoraj dotikajo. Pod to vrzeljo gre torej za isto besedo in vmes ne
+  // sodi presledek; pravi presledki v teh obrazcih merijo vsaj 1,6 pt.
+  const VRZEL_PRESLEDKA = 1;
   const NAJVEC_ODMIK_GLAVE = 200; // glava stolpca stoji nad celo tabelo
   const NAJVEC_ODMIK_STOLPCA = 13; // pt razlike v x, da je glava nad tem poljem
   const PRIVZETI_PAS = 22; // pt navzgor/navzdol, če polje nima soseda
@@ -50,10 +54,12 @@
           odseki.push(tekoci);
           tekoci = null;
         }
-        if (!tekoci) tekoci = { y: k.y, od: k.x, do: k.x + k.w, deli: [k.besedilo] };
-        else {
+        if (!tekoci) {
+          tekoci = { y: k.y, od: k.x, do: k.x + k.w, besedilo: k.besedilo };
+        } else {
+          const locilo = k.x - tekoci.do >= VRZEL_PRESLEDKA ? " " : "";
+          tekoci.besedilo += locilo + k.besedilo;
           tekoci.do = k.x + k.w;
-          tekoci.deli.push(k.besedilo);
         }
       }
       if (tekoci) odseki.push(tekoci);
@@ -62,7 +68,7 @@
       y: o.y,
       od: o.od,
       do: o.do,
-      besedilo: o.deli.join(" ").replace(/\s+/g, " ").trim(),
+      besedilo: o.besedilo.replace(/\s+/g, " ").trim(),
     }));
   }
 
@@ -118,7 +124,10 @@
       (o) =>
         o.y >= pas.spodaj &&
         o.y <= pas.zgoraj &&
-        o.besedilo.length > 2 &&
+        // Dvočrkovni napisi so lahko povsem pravi ("IZ", "NA" v tabeli
+        // sprememb); zavrnemo le samo ločila.
+        o.besedilo.length >= 2 &&
+        /[a-zčšž0-9]/i.test(o.besedilo) &&
         !GLAVE.test(o.besedilo)
     );
 
@@ -147,7 +156,17 @@
       const sidro = vVrstici.reduce((a, b) => (razdalja(b) < razdalja(a) ? b : a));
       // Večvrstične oznake nadaljujemo po istem stolpcu, a le v tem pasu.
       const stolpec = kandidati.filter((o) => Math.abs(o.od - sidro.od) < 25);
-      return { besedilo: zdruzi(stolpec), razdalja: razdalja(sidro) };
+      let besedilo = zdruzi(stolpec);
+
+      // Stolpčna oznaka ("IZ", "NA" v tabeli sprememb) sama zase ne pove, česa
+      // se sprememba tiče. Pred njo zato postavimo besedilo z začetka vrstice.
+      if (besedilo.length <= 3) {
+        const zacetek = vVrstici.reduce((a, b) => (b.od < a.od ? b : a));
+        if (zacetek !== sidro && zacetek.besedilo.length > 3) {
+          besedilo = zacetek.besedilo + " — " + besedilo;
+        }
+      }
+      return { besedilo, razdalja: razdalja(sidro) };
     };
 
     const levo = izberi(
@@ -385,15 +404,59 @@
       .sort((a, b) => a.stran - b.stran || a.y - b.y);
   }
 
-  /** Besedilo tik desno od okenca - njegova oznaka ("m", "fizična oseba"). */
-  function oznakaDesno(kosi, r) {
+  /**
+   * Oznaka enega okenca: besedilo tik desno od njega, omejeno z NASLEDNJIM
+   * okencem iste vrstice. Brez te meje bi pri tesno postavljenih možnostih
+   * ("m" in "ž" sta narazen 13 pt) oznaka požrla tudi sosednjo.
+   *
+   * Koščke lepimo po istem pravilu kot odseke: pod 1 pt gre za isto besedo
+   * (nekateri obrazci šumnike pišejo ločeno), nad tem je presledek.
+   */
+  function oznakaOkenca(kosi, r, mejaDesno) {
     const cy = r.y + r.height / 2;
-    const desni = kosi
-      .filter((k) => Math.abs(k.y - cy) < 6 && k.x >= r.x + r.width - 2)
-      .sort((a, b) => a.x - b.x)[0];
-    if (!desni) return null;
-    const vrzel = desni.x - (r.x + r.width);
-    return vrzel <= NAJVEC_VRZEL_OZNAKE ? desni.besedilo : null;
+    const vrsta = kosi
+      .filter(
+        (k) =>
+          Math.abs(k.y - cy) < 6 && k.x >= r.x + r.width - 2 && k.x < mejaDesno
+      )
+      .sort((a, b) => a.x - b.x);
+    if (!vrsta.length) return null;
+    if (vrsta[0].x - (r.x + r.width) > NAJVEC_VRZEL_OZNAKE) return null;
+
+    let besedilo = vrsta[0].besedilo;
+    let konec = vrsta[0].x + vrsta[0].w;
+    for (let i = 1; i < vrsta.length; i++) {
+      // Oznaka je ENA vrstica besedila: naslednja vrstica iste celice
+      // (npr. "številka računa - plačilnega IBAN") vanjo ne sodi.
+      if (Math.abs(vrsta[i].y - vrsta[0].y) > 2) continue;
+      const vrzel = vrsta[i].x - konec;
+      if (vrzel > VRZEL_STOLPCA) break; // že drug stolpec
+      besedilo += (vrzel >= VRZEL_PRESLEDKA ? " " : "") + vrsta[i].besedilo;
+      konec = vrsta[i].x + vrsta[i].w;
+    }
+    return besedilo;
+  }
+
+  /** Oznaka možnosti: besedilo ob okencu, sicer glava stolpca, sicer vrednost. */
+  function oznakaMoznosti(stran, okence, vsaOkenca) {
+    const r = okence.pravokotnik;
+    const cy = r.y + r.height / 2;
+    // Meja je najbližje okence iste vrstice na desni.
+    const mejaDesno = vsaOkenca
+      .filter(
+        (o) =>
+          o !== okence &&
+          o.pravokotnik &&
+          Math.abs(o.pravokotnik.y + o.pravokotnik.height / 2 - cy) < 6 &&
+          o.pravokotnik.x > r.x
+      )
+      .reduce((n, o) => Math.min(n, o.pravokotnik.x), Infinity);
+
+    return (
+      oznakaOkenca(stran.kosi, r, mejaDesno) ||
+      najdiGlavoStolpca(stran.kosi, r.x + r.width / 2, cy) ||
+      String(okence.vklop || "").toUpperCase()
+    );
   }
 
   /**
@@ -441,9 +504,31 @@
    */
   function izberiOznako(ime, izPdf) {
     const napis = pocistiNapis(izPdf);
-    if (!napis) return pocisti(ime);
+    // "Datum rojstva1" -> "Datum rojstva", "Iz-4" -> "Iz"
+    const cisto = pocisti(ime).replace(/[\s\-_]*\d+$/, "").replace(/[\s\-_]+$/, "");
+    if (!napis) return cisto || pocisti(ime);
     if (imeJeNeuporabno(ime)) return napis;
-    return napis.length <= 40 ? napis : pocisti(ime);
+    return napisJeOznaka(napis) ? napis : cisto || pocisti(ime);
+  }
+
+  /**
+   * Je to res napis polja ali le kos stavka, med katerim polje stoji?
+   * Obrazci s tekočim besedilom ("Podpisani/a* rojen/a dne ___") dajo ob polju
+   * drobce povedi; take raje zavrnemo in obdržimo ime polja, ki je pri teh
+   * obrazcih povedno ("Datum rojstva").
+   */
+  function napisJeOznaka(napis) {
+    if (napis.length > 40) return false;
+    if (napis.includes("*")) return false; // opomba k obveznemu polju
+
+    // Štejemo samo besede; ločila ("/", "—") niso beseda.
+    const besede = napis.split(/\s+/).filter((b) => /[a-zčšž0-9]/i.test(b));
+    if (besede.length > 5) return false;
+    // "S I 5 6" je razsut natis predpone IBAN, ne napis polja.
+    if (besede.filter((b) => b.length === 1).length > besede.length / 2) return false;
+    const odprtih = (napis.match(/\(/g) || []).length;
+    const zaprtih = (napis.match(/\)/g) || []).length;
+    return odprtih === zaprtih;
   }
 
   /**
@@ -489,16 +574,6 @@
     return o(a) === o(b);
   }
 
-  /** Oznaka ene možnosti: besedilo ob okencu, sicer glava stolpca, sicer vrednost. */
-  function oznakaMoznosti(kosi, okence) {
-    const r = okence.pravokotnik;
-    return (
-      oznakaDesno(kosi, r) ||
-      najdiGlavoStolpca(kosi, r.x + r.width / 2, r.y + r.height / 2) ||
-      String(okence.vklop || "").toUpperCase()
-    );
-  }
-
   /**
    * Potrditveno polje, katerega okenca imajo RAZLIČNE vklopne vrednosti, ni
    * kljukica, ampak izbira: "Spol" med m in ž, "Oseba" med fizično in pravno,
@@ -525,7 +600,7 @@
       );
       const moznosti = okenca.map((o) => ({
         vklop: o.vklop,
-        oznaka: oznakaMoznosti(kosi, o),
+        oznaka: oznakaMoznosti(stran, o, okenca),
         polozaj: o.polozaj,
       }));
 
@@ -614,13 +689,36 @@
         .forEach((k) => {
           const zadnji = bloki[bloki.length - 1];
           if (zadnji && zadnji.dno - k.y <= 12) {
-            zadnji.deli.push(k.besedilo);
+            zadnji.vrstice.push(k);
             zadnji.dno = k.y;
-          } else bloki.push({ vrh: k.y, dno: k.y, deli: [k.besedilo] });
+          } else bloki.push({ vrh: k.y, dno: k.y, vrstice: [k] });
         });
 
+      // Nekateri obrazci razdelkov ne pišejo ob robu, ampak kot oštevilčene
+      // naslove v telesu ("2. SPREMEMBA PLAČEVANJA PREMIJE").
+      const odseki = s.odseki || (s.odseki = razdeliNaOdseke(s.kosi));
+      for (const o of odseki) {
+        if (!/^\d+\s*\.\s*[A-ZČŠŽ]/.test(o.besedilo)) continue;
+        const oklepaj = o.besedilo.indexOf("(");
+        const vOklepaju =
+          oklepaj > 0 ? o.besedilo.slice(oklepaj).replace(/[()]/g, "") : "";
+        const jeNavodilo = /izpolni|obvezn|le,? *če|velja|navedite/i.test(vOklepaju);
+        const naslov = pocisti(
+          jeNavodilo ? o.besedilo.slice(0, oklepaj) : o.besedilo
+        );
+        // Naslov je kratek; oštevilčena vprašanja ("1. IMATE OZIROMA VAM JE
+        // BILA ...?") so povedi in ne razdelki.
+        if (naslov.length > 45 || naslov.endsWith("?")) continue;
+        izhod.push({
+          stran: s.stran,
+          y: ((mere.visina - o.y) / mere.visina) * 100,
+          naslov,
+          opomba: jeNavodilo ? pocisti(vOklepaju) : null,
+        });
+      }
+
       for (const b of bloki) {
-        const celo = pocisti(b.deli.join(" "));
+        const celo = pocisti(b.vrstice.map((v) => v.besedilo).join(" "));
         // Naslov razdelka se začne z veliko črko ali rimsko številko; tako
         // izpustimo oznake polj ob robu ("kraj in datum") in številko obrazca.
         if (!/^([IVX]+\.|[A-ZČŠŽ])/.test(celo) || celo.length < 4) continue;
