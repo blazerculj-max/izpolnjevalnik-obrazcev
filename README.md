@@ -3,8 +3,7 @@
 Izpolnjevanje PDF obrazcev s podpisom stranke — **v celoti v brskalniku**.
 Brez namestitve, brez prijave, brez strežnika, ki bi karkoli obdeloval.
 
-👉 **[Odpri orodje](https://UPORABNIK.github.io/izpolnjevalnik-obrazcev/)**
-*(povezavo popravi, ko je repozitorij objavljen)*
+👉 **[Odpri orodje](https://blazerculj-max.github.io/izpolnjevalnik-obrazcev/)**
 
 ## Kaj zna
 
