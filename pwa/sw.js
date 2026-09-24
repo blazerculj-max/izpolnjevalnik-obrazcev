@@ -8,8 +8,10 @@
 // stari različici.
 
 const RAZLICICA = "__RAZLICICA__";
+// Korena ("./") namenoma ne shranjujemo posebej - to je ista 4,5 MB datoteka
+// kot index.html in bi zasedla dvakrat toliko prostora. Ob odprtju brez
+// povezave jo postreže zasilna pot v obravnavi fetch spodaj.
 const DATOTEKE = [
-  "./",
   "./index.html",
   "./manifest.webmanifest",
   "./ikona-180.png",
