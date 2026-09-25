@@ -347,7 +347,7 @@
         Math.abs(o.od - napis.od) < 25 &&
         /^[a-zčšž]/.test(o.besedilo)
     );
-    return pod ? pod.besedilo : "";
+    return pod || null;
   }
 
   function najdiMestaPodpisov(strani, mereStrani) {
@@ -364,14 +364,23 @@
         if (/\bs podpisom\b|podpisane|podpisani/i.test(t)) continue;
 
         const okvir = najdiOkvirNapisa(s.okvirji, o);
+        const nadaljevanje = nadaljevanjeNapisa(odseki, o);
+        const naziv = popraviPomanjsaneVerzalke(
+          pocisti(t + " " + (nadaljevanje ? nadaljevanje.besedilo : "")).replace(
+            /\*/g,
+            ""
+          )
+        );
+        const potrebujeSifro = /šifra|sifra/i.test(t);
         najdeni.push({
-          naziv: popraviPomanjsaneVerzalke(
-            pocisti(t + " " + nadaljevanjeNapisa(odseki, o)).replace(/\*/g, "")
-          ),
+          naziv,
           stran: s.stran,
-          potrebujeSifro: /šifra|sifra/i.test(t),
+          potrebujeSifro,
+          // "ime in priimek ter podpis zavarovane osebe": v okvir sodi tudi
+          // izpisano ime. Kjer obrazec zahteva šifro, je ta že na tem mestu.
+          potrebujeIme: !potrebujeSifro && /ime in priimek/i.test(naziv),
           zaProdajnika: /prodajnik|zastopnik|posrednik/i.test(t),
-          ...mestoVOkviru(o, okvir, mere),
+          ...mestoVOkviru(o, okvir, mere, nadaljevanje ? nadaljevanje.y : o.y),
         });
       }
     });
@@ -455,7 +464,7 @@
    * v isto vrstico - tam jo obrazec pričakuje ("ŠIFRA IN PODPIS PRODAJNIKA").
    * Brez najdenega okvira ostane staro ravnanje: malo pod napisom.
    */
-  function mestoVOkviru(napis, okvir, mere) {
+  function mestoVOkviru(napis, okvir, mere, dnoNapisa) {
     const vOdstotkihX = (x) => (x / mere.sirina) * 100;
     const vOdstotkihY = (y) => ((mere.visina - y) / mere.visina) * 100;
 
@@ -465,6 +474,8 @@
         y: vOdstotkihY(napis.y - 24),
         okvir: null,
         sifra: null,
+        ime: null,
+        zImenom: null,
         najvecSirina: 22,
         najvecVisina: null,
       };
@@ -472,6 +483,14 @@
 
     const rob = 4;
     const prostor = napis.y - okvir.y - rob; // višina pod napisom, v točkah
+
+    // Kadar v okvir sodi tudi izpisano ime, si s podpisom deli prostor:
+    // ime v vrstici tik pod napisom, podpis pod njim.
+    const dno = dnoNapisa === undefined ? napis.y : dnoNapisa;
+    // 10 pt pod zadnjo vrstico napisa: strešica na Ž se pri 9 pt že dotakne
+    // napisa, kadar je ta prelomljen čez dve vrstici.
+    const vrsticaImena = dno - 10;
+    const podImenom = Math.max(vrsticaImena - 3 - (okvir.y + rob), 6);
     return {
       x: vOdstotkihX(okvir.x + okvir.sirina / 2),
       y: vOdstotkihY(okvir.y + Math.max(prostor, 6) / 2),
@@ -485,6 +504,16 @@
       sifra: {
         x: vOdstotkihX(Math.min(napis.do + 6, okvir.x + okvir.sirina - 30)),
         y: vOdstotkihY(napis.y),
+      },
+      // Ime gre v svojo vrstico pod napis, poravnano na levi rob okvira.
+      ime: {
+        x: vOdstotkihX(okvir.x + rob),
+        y: vOdstotkihY(vrsticaImena),
+      },
+      // Podpis, kadar je nad njim še ime: nižje in v manjšem prostoru.
+      zImenom: {
+        y: vOdstotkihY(okvir.y + rob + podImenom / 2),
+        najvecVisina: (podImenom / mere.visina) * 100,
       },
       najvecSirina: ((okvir.sirina - 2 * rob) / mere.sirina) * 100,
       najvecVisina: (Math.max(prostor, 6) / mere.visina) * 100,

@@ -256,22 +256,32 @@
   /** Iz napisov na obrazcu ("PODPIS ZAVAROVALCA") pripravimo mesta za podpise. */
   function pripraviPodpisnePasove() {
     const najdeni = odprtObrazec.shema.podpisi || [];
-    podpisniPasovi = najdeni.map((m, i) => ({
-      id: "podpis" + i,
-      naziv: lepNaziv(m.naziv),
-      stran: m.stran,
-      x: m.x,
-      y: m.y,
-      // Privzeta širina podpisa; okvir na obrazcu jo lahko le zmanjša,
-      // da podpis vanj sede.
-      sirina: Math.round(Math.min(PRIVZETA_SIRINA_PODPISA, m.najvecSirina || PRIVZETA_SIRINA_PODPISA)),
-      najvecVisina: m.najvecVisina || null,
-      mestoSifre: m.sifra || null,
-      slika: null,
-      potrebujeSifro: !!m.potrebujeSifro,
-      zaProdajnika: !!m.zaProdajnika,
-      sifra: m.potrebujeSifro ? localStorage.getItem("sifra-prodajnika") || "" : "",
-    }));
+    podpisniPasovi = najdeni.map((m, i) => {
+      // Kjer v okvir sodi tudi izpisano ime, si s podpisom deli prostor:
+      // podpis se umakne pod vrstico z imenom.
+      const zImenom = m.potrebujeIme && m.zImenom ? m.zImenom : null;
+      return {
+        id: "podpis" + i,
+        naziv: lepNaziv(m.naziv),
+        stran: m.stran,
+        x: m.x,
+        y: zImenom ? zImenom.y : m.y,
+        // Privzeta širina podpisa; okvir na obrazcu jo lahko le zmanjša,
+        // da podpis vanj sede.
+        sirina: Math.round(
+          Math.min(PRIVZETA_SIRINA_PODPISA, m.najvecSirina || PRIVZETA_SIRINA_PODPISA)
+        ),
+        najvecVisina: zImenom ? zImenom.najvecVisina : m.najvecVisina || null,
+        // Mesto besedila v okviru: šifra ob napisu ali ime v vrstici pod njim.
+        mestoBesedila: m.potrebujeIme ? m.ime || null : m.sifra || null,
+        slika: null,
+        potrebujeSifro: !!m.potrebujeSifro,
+        potrebujeIme: !!m.potrebujeIme,
+        zaProdajnika: !!m.zaProdajnika,
+        sifra: m.potrebujeSifro ? localStorage.getItem("sifra-prodajnika") || "" : "",
+        ime: "",
+      };
+    });
     // Če napisov nismo našli, ponudimo vsaj en prosti podpis.
     if (podpisniPasovi.length === 0) {
       podpisniPasovi = [
@@ -284,7 +294,9 @@
           sirina: 22,
           slika: null,
           potrebujeSifro: false,
+          potrebujeIme: false,
           sifra: "",
+          ime: "",
         },
       ];
     }
@@ -585,6 +597,13 @@
                    placeholder="Šifra prodajnika" value="${escapeHtml(p.sifra)}" />`
               : ""
           }
+          ${
+            p.potrebujeIme
+              ? `<input type="text" class="sifra-vnos" data-ime="${p.id}"
+                   autocomplete="off" autocorrect="off" spellcheck="false"
+                   placeholder="Ime in priimek" value="${escapeHtml(p.ime)}" />`
+              : ""
+          }
           <label class="oznaka-polja velikost-oznaka">
           Velikost <span data-velikost="${p.id}">${p.sirina}</span> % širine strani
         </label>
@@ -648,6 +667,12 @@
       v.addEventListener("input", () => {
         najdiPas(v.dataset.sifra).sifra = v.value;
         localStorage.setItem("sifra-prodajnika", v.value);
+      })
+    );
+    // Ime stranke je njen podatek - v napravi ga ne pustimo za sabo.
+    ovoj.querySelectorAll("[data-ime]").forEach((v) =>
+      v.addEventListener("input", () => {
+        najdiPas(v.dataset.ime).ime = v.value;
       })
     );
   }
@@ -817,10 +842,11 @@
         y: p.y,
         sirina: p.sirina,
         najvecVisina: p.najvecVisina,
-        besedilo: p.sifra || null,
-        // Šifra gre v okvir, ob napis "šifra in podpis prodajnika".
-        besedilo_x: p.mestoSifre ? p.mestoSifre.x : null,
-        besedilo_y: p.mestoSifre ? p.mestoSifre.y : null,
+        besedilo: p.sifra || p.ime || null,
+        // Šifra gre ob napis "šifra in podpis prodajnika", ime pa v vrstico
+        // pod napis "ime in priimek ter podpis ...".
+        besedilo_x: p.mestoBesedila ? p.mestoBesedila.x : null,
+        besedilo_y: p.mestoBesedila ? p.mestoBesedila.y : null,
       }));
 
     stanje.textContent = "Pripravljam…";
