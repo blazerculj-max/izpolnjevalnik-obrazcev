@@ -29,7 +29,11 @@
   // Ponudbi so oznake 1,5-4 pt od okenca, pri Opredelitvi pa je najbližje
   // besedilo desno že naslednji stolpec (9,8-29,3 pt).
   const NAJVEC_VRZEL_OZNAKE = 7;
-  const ROB_SEKCIJE = 45; // pt od levega roba: tam obrazec piše naslove razdelkov
+  // Nekateri obrazci pišejo naslove razdelkov v ozkem stolpcu ob levem robu,
+  // drugi pa ne - pri teh se telo začne kar na skrajni levi. Meje zato ni
+  // mogoče določiti s fiksno številko; izračunamo jo za vsako stran posebej.
+  const NAJMANJSA_VRZEL_ROBA = 18; // pt med robnim stolpcem in telesom
+  const NAJVEC_DELEZ_ROBA = 0.25; // več kot toliko besedila ni rob, ampak telo
   const NAJVEC_ODMIK_SEKCIJE = 130; // pt navzgor do naslova razdelka
 
   /**
@@ -517,12 +521,15 @@
    * Naslov razdelka ob levem robu strani ("Zavarovalec", "Zavarovanec").
    * Po njem ločimo sicer enaka vprašanja, ki se na obrazcu ponovijo za več oseb.
    */
-  function sekcijaOb(kosi, y) {
+  function sekcijaOb(stran, y) {
+    const rob = robSekcije(stran);
+    if (rob === null) return null;
+    const kosi = stran.kosi;
     // Naslov razdelka je samostojna beseda ali dve z veliko začetnico
     // ("Zavarovalec", "Prejemnik računa"). Tako izločimo drobce stavkov,
     // ki po naključju stojijo ob robu ("(izpolniti le, če", "plačevanja").
     const JE_NASLOV = /^[A-ZČŠŽ][a-zčšž]+(\s[a-zčšž]+)?$/;
-    const obRobu = kosi.filter((k) => k.x < ROB_SEKCIJE).sort((a, b) => b.y - a.y);
+    const obRobu = kosi.filter((k) => k.x < rob).sort((a, b) => b.y - a.y);
     const najden = obRobu
       .filter(
         (k) => k.y >= y - 6 && k.y - y < NAJVEC_ODMIK_SEKCIJE && JE_NASLOV.test(k.besedilo)
@@ -627,6 +634,65 @@
     return PRELOMLJENE_BESEDE.reduce((t, [vzorec, cela]) => t.replace(vzorec, cela), niz);
   }
 
+  /**
+   * Meja robnega stolpca na tej strani ali null, če ga stran nima.
+   * Robni stolpec prepoznamo po vrzeli do telesa in po tem, da vsebuje le
+   * majhen del besedila: pri Opredelitvi 14 -> 37 pt (16 od 185 koščkov),
+   * pri obrazcu Zahtevek pa je najbližji naslednji rob 27 pt in v pasu je
+   * skoraj četrtina besedila - tam torej robnega stolpca ni.
+   */
+  function robSekcije(stran) {
+    if (stran.__rob !== undefined) return stran.__rob;
+    const kosi = stran.kosi;
+    let rob = null;
+
+    if (kosi.length) {
+      const mediana = [...kosi.map((k) => k.x)].sort((a, b) => a - b)[
+        Math.floor(kosi.length / 2)
+      ];
+      // Levi robovi besedila v levi polovici strani, brez ponovitev.
+      const robovi = [...new Set(kosi.map((k) => Math.round(k.x)))]
+        .filter((x) => x <= mediana)
+        .sort((a, b) => a - b);
+
+      // Robni stolpec od telesa loči največja vrzel med temi robovi.
+      // Ob enako velikih vrzelih vzamemo NAJBOLJ DESNO: pri Opredelitvi sta
+      // dve po 19 pt (18->37 in 38->57), prava meja pa je tista ob telesu -
+      // sicer bi robni stolpec prerezali na pol in izgubili pol naslova.
+      let najvecja = 0;
+      let mejaPri = null;
+      for (let i = 1; i < robovi.length; i++) {
+        const vrzel = robovi[i] - robovi[i - 1];
+        if (vrzel >= najvecja) {
+          najvecja = vrzel;
+          mejaPri = robovi[i - 1] + vrzel / 2;
+        }
+      }
+
+      const vPasu = kosi.filter((k) => k.x < mejaPri).length;
+      if (
+        najvecja >= NAJMANJSA_VRZEL_ROBA &&
+        vPasu / kosi.length <= NAJVEC_DELEZ_ROBA
+      ) {
+        rob = mejaPri;
+      }
+    }
+
+    stran.__rob = rob;
+    return rob;
+  }
+
+  /**
+   * Je besedilo v oklepaju navodilo (in ne del naslova)?
+   * Pozor: "izpolni" ne ujame besede "izpolnjevanje", zato gre koren brez
+   * končnice. Dolg oklepaj za kratkim naslovom je navodilo tudi brez teh
+   * besed ("13. Podpis (ime in priimek se mora izpisati z velikimi ...)").
+   */
+  function jeNavodiloVOklepaju(vsebina) {
+    const t = String(vsebina || "").trim();
+    return /izpoln|obvezn|le,? *če|velja|navedite/i.test(t) || t.length > 20;
+  }
+
   /** Odveč ločila in presledki ob oznakah iz PDF-ja. */
   function pocisti(niz) {
     return zlepiPrelomljene(String(niz || ""))
@@ -713,7 +779,7 @@
         oznaka: vprasanje,
         dodatno: pojasnilo,
         razdelek: (() => {
-          const r = sekcijaOb(kosi, okenca[0].pravokotnik.y);
+          const r = sekcijaOb(stran, okenca[0].pravokotnik.y);
           // Razdelek, ki le ponovi vprašanje, ne pove ničesar.
           if (!r || jeIsto(r, vprasanje)) return null;
           return jeIsto(r.split(" ")[0], vprasanje.split(" ")[0]) ? null : r;
@@ -752,9 +818,10 @@
 
       // Naslov je ob robu pogosto prelomljen čez več vrstic - vrstice, ki si
       // tesno sledijo, spadajo skupaj.
+      const rob = robSekcije(s);
       const bloki = [];
-      s.kosi
-        .filter((k) => k.x < ROB_SEKCIJE)
+      (rob === null ? [] : s.kosi)
+        .filter((k) => k.x < rob)
         .sort((a, b) => b.y - a.y)
         .forEach((k) => {
           const zadnji = bloki[bloki.length - 1];
@@ -772,13 +839,19 @@
         const oklepaj = o.besedilo.indexOf("(");
         const vOklepaju =
           oklepaj > 0 ? o.besedilo.slice(oklepaj).replace(/[()]/g, "") : "";
-        const jeNavodilo = /izpolni|obvezn|le,? *če|velja|navedite/i.test(vOklepaju);
+        const jeNavodilo = jeNavodiloVOklepaju(vOklepaju);
         const naslov = pocisti(
           jeNavodilo ? o.besedilo.slice(0, oklepaj) : o.besedilo
         );
         // Naslov je kratek; oštevilčena vprašanja ("1. IMATE OZIROMA VAM JE
         // BILA ...?") so povedi in ne razdelki.
-        if (naslov.length > 45 || naslov.endsWith("?")) continue;
+        // Naslov je kratek; oštevilčene povedi v deklaraciji merijo 69 znakov
+        // in več, pravi naslovi pa do 55 ("2. Izjava o davčnem rezidentstvu
+        // skladno s FATCA in CRS").
+        // Vprašaj iščemo v CELEM odseku: pri "3. IMATE ... STORITEV (PREGLED,
+        // ...)?" stoji za oklepajem, ki ga odrežemo, in bi vprašanje obveljalo
+        // za naslov razdelka.
+        if (naslov.length > 60 || o.besedilo.includes("?")) continue;
         izhod.push({
           stran: s.stran,
           y: ((mere.visina - o.y) / mere.visina) * 100,
@@ -805,7 +878,7 @@
         if (!opomba) {
           const n = s.kosi.find(
             (k) =>
-              k.x >= ROB_SEKCIJE &&
+              k.x >= rob &&
               Math.abs(k.y - b.vrh) < 14 &&
               /^(izpolni|obvezn)/i.test(k.besedilo)
           );
