@@ -361,9 +361,16 @@
     // Polja združimo po razdelkih obrazca ("Zavarovalec", "2. Podatki o
     // zavarovalnem primeru"), znotraj njih pa po sklopih, ki jih obrazec piše
     // z manjšim naslovom ("Osebni dokument", "Naslov stalnega prebivališča").
+    // Polja, ki na obrazcu stojijo v isti vrstici, naj bodo v isti vrstici
+    // tudi tu. Vrstico prepoznamo po enaki višini na strani.
+    const PRAG_VRSTICE = 0.9; // % višine strani
+    const visinaNa = (vir) =>
+      vir.polozaj ? vir.polozaj.y : typeof vir.y === "number" ? vir.y : 0;
+
     const skupine = [];
     let tekoca = null;
     let tekociSklop = null;
+    let tekocaVrstica = null;
     for (const e of elementi) {
       const r = e.vir.razdelek >= 0 ? razdelki[e.vir.razdelek] : null;
       const pr = e.vir.podrazdelek >= 0 ? podrazdelki[e.vir.podrazdelek] : null;
@@ -381,10 +388,16 @@
       }
       const sklopKljuc = pr ? String(e.vir.podrazdelek) : "";
       if (!tekociSklop || tekociSklop.kljuc !== sklopKljuc) {
-        tekociSklop = { kljuc: sklopKljuc, naslov: pr ? pr.naslov : null, deli: [] };
+        tekociSklop = { kljuc: sklopKljuc, naslov: pr ? pr.naslov : null, vrstice: [] };
         tekoca.sklopi.push(tekociSklop);
+        tekocaVrstica = null;
       }
-      tekociSklop.deli.push(e.html);
+      const y = visinaNa(e.vir);
+      if (!tekocaVrstica || Math.abs(y - tekocaVrstica.y) > PRAG_VRSTICE) {
+        tekocaVrstica = { y, deli: [] };
+        tekociSklop.vrstice.push(tekocaVrstica);
+      }
+      tekocaVrstica.deli.push(e.html);
     }
 
     const skupineHtml = skupine
@@ -396,7 +409,9 @@
               .map(
                 (k) =>
                   (k.naslov ? `<h4 class="naslov-sklopa">${escapeHtml(k.naslov)}</h4>` : "") +
-                  `<div class="mreza-polj">${k.deli.join("")}</div>`
+                  k.vrstice
+                    .map((v) => `<div class="mreza-polj">${v.deli.join("")}</div>`)
+                    .join("")
               )
               .join("")}
           </div>`

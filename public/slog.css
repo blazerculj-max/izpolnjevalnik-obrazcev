@@ -307,14 +307,20 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
   border-bottom: 1px solid var(--meja); padding-bottom: 5px;
   line-height: 1.35;
 }
-.mreza-polj { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+/* Ena .mreza-polj je ena vrstica obrazca, taka kot na papirju: "naziv
+   podjetja" in "matična številka" sta skupaj, "ime in priimek zavarovalca"
+   pa v svoji vrstici pod njima. Polja si vrstico razdelijo enakomerno; če
+   jih je za eno vrstico preveč, se prelomijo. */
+.mreza-polj { display: flex; flex-wrap: wrap; gap: 12px; }
+.mreza-polj + .mreza-polj { margin-top: 12px; }
+.mreza-polj > .polje { flex: 1 1 220px; min-width: 0; }
 .oznaka-polja { display: block; font-size: 12px; font-weight: 600; color: var(--pridusen); margin-bottom: 3px; }
 .pojasnilo-polja {
   display: block; font-size: 11.5px; color: var(--pridusen);
   font-weight: 400; margin-top: 3px; line-height: 1.4;
 }
 /* Trditve pri potrditvenih poljih so dolge - naj zasedejo celo vrstico */
-.polje.sirok { grid-column: 1 / -1; }
+.polje.sirok { flex-basis: 100%; }
 .polje-potrditev {
   display: flex; align-items: flex-start; gap: 9px;
   background: var(--ozadje); border: 1px solid var(--meja);
