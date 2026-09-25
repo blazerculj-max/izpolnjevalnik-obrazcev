@@ -789,6 +789,9 @@
       .forEach((g) => g.classList.remove("izbran"));
     podpisniPasovi.forEach((p) => {
       p.slika = null;
+      // Ime in priimek je strankin podatek in mora iti z ostalimi; šifra
+      // prodajnika je tvoja in ostane, kot ostane med obrazci.
+      p.ime = "";
     });
     sprostiBlobe();
     const izhod = document.getElementById("izhod-pdf");

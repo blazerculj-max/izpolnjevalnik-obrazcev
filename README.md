@@ -62,8 +62,10 @@ Kar stran hrani na napravi:
 
 Polja imajo izklopljena `autocomplete`, `autocorrect` in `spellcheck`, da si
 jih brskalnik ne zapomni za samodejno izpolnjevanje. Gumb **Počisti vse**
-pobriše polja, odgovore, podpise in pripravljen PDF; ta se sprosti tudi ob
-zaprtju zavihka.
+pobriše polja, odgovore, podpise, vpisana imena ob podpisih in pripravljen
+PDF; ta se sprosti tudi ob zaprtju zavihka. Ob osvežitvi strani ni treba
+počistiti ničesar — podatki živijo samo v pomnilniku odprtega zavihka in z
+njim izginejo.
 
 ### Kje tveganje v resnici ostane
 
