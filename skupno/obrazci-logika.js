@@ -1147,7 +1147,35 @@
       // Nekateri obrazci razdelkov ne pišejo ob robu, ampak kot oštevilčene
       // naslove v telesu ("2. SPREMEMBA PLAČEVANJA PREMIJE").
       const odseki = s.odseki || (s.odseki = razdeliNaOdseke(s.kosi));
+      // Naslov je lahko razbit na kose, ker med njimi stojijo okenca:
+      // "5." | "Priključitev" | "Izključitev" | "Sprememba dodatnega
+      // nezgodnega zavarovanja". Sam ostane le oštevilčeni začetek, zato ga
+      // prepoznamo po pisavi naslova in nato poberemo celo vrstico.
+      const telo = telesnaVisinaPisave(s.kosi);
       for (const o of odseki) {
+        if (
+          telo &&
+          o.visina > telo + NAJMANJSI_PRIRASTEK_PISAVE &&
+          /^\d+\s*\.\s*[a-zčšž]?\.?$/.test(o.besedilo)
+        ) {
+          const vrstica = odseki
+            .filter((k) => Math.abs(k.y - o.y) < 3 && k.od > o.od)
+            .sort((a, b) => a.od - b.od)
+            .map((k) => pocisti(k.besedilo))
+            .filter(Boolean);
+          if (!vrstica.length) continue;
+          // Oznaka razdelka obdrži piko ("5.", "7.a"); pocisti() jo odreže.
+          const oznaka = o.besedilo.trim().replace(/\s+/g, "");
+          const naslov = oznaka + " " + vrstica.join(" / ");
+          if (naslov.length > NAJVEC_ZNAKOV_SESTAVLJENEGA) continue;
+          izhod.push({
+            stran: s.stran,
+            y: ((mere.visina - o.y) / mere.visina) * 100,
+            naslov,
+            opomba: null,
+          });
+          continue;
+        }
         if (!/^\d+\s*\.\s*[A-ZČŠŽ]/.test(o.besedilo)) continue;
         const oklepaj = o.besedilo.indexOf("(");
         const vOklepaju =
@@ -1218,7 +1246,12 @@
   const NAJMANJSI_PRIRASTEK_PISAVE = 0.8; // pt nad telesno pisavo
   const NAJVECJI_KOLICNIK_PISAVE = 2.2; // več je naslov obrazca, ne razdelka
   const DOPUST_ROBA_PODRAZDELKA = 3; // pt: naslov stoji levo od oznak polj
-  const NAJVEC_ZNAKOV_PODRAZDELKA = 50;
+  const NAJVEC_ZNAKOV_PODRAZDELKA = 80;
+  const NAJMANJSI_KOLICNIK_ZA_OKENCEM = 1.9; // pisava naslova, ne trditve
+  // Sestavljen naslov nosi tudi moznosti ("5. Prikljucitev / Izkljucitev /
+  // Sprememba dodatnega zdravstvenega zavarovanja na potovanjih v tujini z
+  // asistenco" meri 96 znakov), zato je meja zanj visja.
+  const NAJVEC_ZNAKOV_SESTAVLJENEGA = 130;
 
   /** Najpogostejša višina pisave na strani - to je telo, ne naslovi. */
   function telesnaVisinaPisave(kosi) {
@@ -1253,10 +1286,33 @@
 
       const naStrani = polja.filter((p) => p.stran === s.stran && p.pravokotnik);
       if (!naStrani.length) return;
+      // Okenca so lahko raztresena čez več strani (polje se šteje po prvem),
+      // zato jih za to stran poberemo posebej.
+      const okencaStrani = [];
+      polja.forEach((p) => {
+        if (p.tip !== "CheckBox" && p.tip !== "RadioGroup") return;
+        (p.okenca || []).forEach((o) => {
+          if (o.stran === s.stran && o.pravokotnik) okencaStrani.push(o.pravokotnik);
+        });
+      });
       const meja = meje.get(s.stran);
       const stolpecOdseka = (o) => (meja != null && o.od >= meja ? 1 : 0);
 
       const odseki = s.odseki || (s.odseki = razdeliNaOdseke(s.kosi));
+
+      // Pisave, s katerimi so na tej strani pisani oštevilčeni naslovi
+      // razdelkov. Po njih prepoznamo tudi naslov sklopa, ki stoji za
+      // okencem in torej ni na robu ("☐ Izbira paketa").
+      const visineNaslovov = new Set(
+        odseki
+          .filter(
+            (k) =>
+              k.visina > telo &&
+              (/^\d+\s*\.\s*([a-zčšž]\s*\.?)?$/.test(k.besedilo) ||
+                /^\d+\s*\.\s*[A-ZČŠŽ]/.test(k.besedilo))
+          )
+          .map((k) => Number(k.visina.toFixed(1)))
+      );
 
       // Levi rob vsakega stolpca: naslovi stojijo nanj, oznake polj so
       // zamaknjene nekaj točk desno.
@@ -1270,12 +1326,33 @@
         if (!o.visina || o.visina < telo + NAJMANJSI_PRIRASTEK_PISAVE) continue;
         if (o.visina > telo * NAJVECJI_KOLICNIK_PISAVE) continue; // naslov obrazca
         const c = stolpecOdseka(o);
-        if (o.od > robStolpca.get(c) + DOPUST_ROBA_PODRAZDELKA) continue;
+        // Naslov sklopa stoji na levem robu stolpca - ali pa takoj za
+        // okencem, ki ga vklopi ("☐ Izbira paketa").
+        // Da okenčna trditev ("☐ Bolezen") ne obvelja za naslov, mora biti
+        // tak naslov pisan z isto pisavo kot oštevilčeni naslovi te strani.
+        const zaOkencem =
+          visineNaslovov.has(Number(o.visina.toFixed(1))) &&
+          okencaStrani.some(
+            (r) =>
+              Math.abs(r.y + r.height / 2 - o.y) < 8 &&
+              o.od - (r.x + r.width) > 0 &&
+              o.od - (r.x + r.width) < 14
+          );
+        if (o.od > robStolpca.get(c) + DOPUST_ROBA_PODRAZDELKA && !zaOkencem) continue;
 
         const naslov = pocisti(o.besedilo);
         if (naslov.length < 3 || naslov.length > NAJVEC_ZNAKOV_PODRAZDELKA) continue;
         if (naslov.includes("?")) continue;
+        // Dolg naslov je še naslov, dokler ni poved: "Upravičenec za dodatno
+        // zavarovanje ... je zavarovana oseba" je opomba pod tabelo.
+        if (naslov.length > 50 && /\b(je|so|ni|niso|naj|bo|bodo)\b/i.test(naslov)) {
+          continue;
+        }
         if (!/^([IVX]+\.|\d+\.|[A-ZČŠŽ])/.test(naslov)) continue;
+        // Oznaka obrazca ("340.107.018.11", "ZA-OZ-pis/25-7") ni naslov.
+        if (/^[\d.]+$/.test(naslov)) continue;
+        // Oznaka obrazca ("ZA-OZ-pis/25-7") ni naslov razdelka.
+        if (/^[A-ZČŠŽ]{2,}[-/][\w./-]*\d/.test(naslov)) continue;
 
         // Besedilo, ki leži V polju ali ob njem, je vsebina, ne naslov.
         const vPolju = naStrani.some((p) => {

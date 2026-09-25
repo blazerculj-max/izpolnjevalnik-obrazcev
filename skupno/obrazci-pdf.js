@@ -205,10 +205,15 @@
       // Naslov velja za polja POD njim; ob robu je poravnan na sredino svojega
       // bloka, zato dopustimo nekaj odstotka strani nazaj navzgor.
       const DOPUST = 2;
+      // Razdelek se ne konča s stranjo: tabela razdelka 10.b se pri Zahtevku
+      // nadaljuje na naslednjo stran in polja tam spadajo podenj, dokler se
+      // ne začne nov razdelek. Zato primerjamo mesto v dokumentu, ne le y.
+      const jePred = (r, stran, y) => r.stran < stran || (r.stran === stran && r.y <= y);
       const zadnjiNad = (seznam, p, dodatno) => {
+        const y = (p.polozaj?.y ?? 0) + DOPUST;
         let naj = -1;
         seznam.forEach((r, i) => {
-          if (r.stran !== p.stran || r.y > (p.polozaj?.y ?? 0) + DOPUST) return;
+          if (!jePred(r, p.stran, y)) return;
           if (dodatno && !dodatno(r)) return;
           naj = i;
         });
@@ -216,13 +221,14 @@
       };
       polja.forEach((p) => {
         p.razdelek = zadnjiNad(razdelki, p);
-        const odY = p.razdelek >= 0 ? razdelki[p.razdelek].y : -Infinity;
-        // Naslov v desnem stolpcu velja samo za desni stolpec in samo znotraj
-        // svojega razdelka.
+        const sekcija = p.razdelek >= 0 ? razdelki[p.razdelek] : null;
+        // Naslov sklopa velja za svoj stolpec in le znotraj svojega razdelka.
         p.podrazdelek = zadnjiNad(
           podrazdelki,
           p,
-          (r) => r.stolpec === (p.stolpec ?? 0) && r.y >= odY
+          (r) =>
+            r.stolpec === (p.stolpec ?? 0) &&
+            (!sekcija || !jePred(r, sekcija.stran, sekcija.y - 0.001))
         );
       });
 

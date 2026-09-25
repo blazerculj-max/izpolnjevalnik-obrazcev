@@ -298,10 +298,14 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
 /* ---------- obrazci ---------- */
 .obrazec-postavitev { display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
 .polja-skupina { margin-bottom: 18px; }
+/* Naslov razdelka je zapisan tako, kot stoji na obrazcu. Velikih črk mu ne
+   vsiljujemo: "10.b" bi postal "10.B", dolgi naslovi ("9. Priključitev /
+   Izključitev / Sprememba dodatnega zdravstvenega zavarovanja ...") pa so
+   v verzalkah težko berljivi. */
 .polja-skupina > h3 {
-  margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
-  letter-spacing: .04em; color: var(--pridusen);
+  margin: 0 0 10px; font-size: 13.5px; color: var(--tekst);
   border-bottom: 1px solid var(--meja); padding-bottom: 5px;
+  line-height: 1.35;
 }
 .mreza-polj { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .oznaka-polja { display: block; font-size: 12px; font-weight: 600; color: var(--pridusen); margin-bottom: 3px; }
