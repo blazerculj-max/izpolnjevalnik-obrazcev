@@ -28,7 +28,12 @@
   // Besedilo je oznaka okenca le, če stoji tik ob njem. Izmerjeno: pri
   // Ponudbi so oznake 1,5-4 pt od okenca, pri Opredelitvi pa je najbližje
   // besedilo desno že naslednji stolpec (9,8-29,3 pt).
-  const NAJVEC_VRZEL_OZNAKE = 7;
+  // Izmerjeno: pri Ponudbi 1,5-4 pt, pri Zahtevku ("Priključitev",
+  // "Izključitev", "Sprememba ...") do 10,3 pt. Da pri Opredelitvi kljub
+  // širšemu oknu ne pobere sosednjega stolpca, poskrbi pravilo o besedilu,
+  // ki ga vidita dve okenci hkrati (glej oznakaMoznosti).
+  const NAJVEC_VRZEL_OZNAKE = 14;
+  const NAJVEC_VRZEL_MED_BESEDAMA = 8; // pt med besedama iste oznake
   // Nekateri obrazci pišejo naslove razdelkov v ozkem stolpcu ob levem robu,
   // drugi pa ne - pri teh se telo začne kar na skrajni levi. Meje zato ni
   // mogoče določiti s fiksno številko; izračunamo jo za vsako stran posebej.
@@ -209,6 +214,7 @@
       return {
         besedilo,
         od: sidro.od,
+        do: Math.max(...stolpec.map((o) => o.do)),
         vrzel: vrzelDo(sidro),
         ocena: oceni(sidro, vrzelDo(sidro)) * utez,
       };
@@ -264,6 +270,20 @@
 
     if (!levo) return desno ? desno.besedilo : null;
     if (!desno) return levo.besedilo;
+
+    // Pri okencih stoji napis po navadi DESNO od njih. Vzamemo ga, kadar je
+    // cela poved in za njim v tej vrstici ni več nobenega polja - takrat
+    // namreč nismo v stolpcu tabele, ampak pred svojim besedilom. Tako dobi
+    // vsaka od treh izjav o politični izpostavljenosti svojo trditev,
+    // tabela Opredelitve (kjer za napisom stoji še okence stolpca ZAHTEVE)
+    // pa obdrži trditev na levi.
+    if (
+      (polje.tip === "CheckBox" || polje.tip === "RadioGroup") &&
+      desno.besedilo.length > 25 &&
+      !poljeDesnoOd(vsaPolja, polje, desno.do, cy)
+    ) {
+      return desno.besedilo;
+    }
 
     // V tabeli Opredelitve stoji ime produkta med obema stolpcema okenc in je
     // okencu v stolpcu POTREBE celo bližje (29 pt) od trditve (48 pt). Zgolj
@@ -631,6 +651,31 @@
    * Koščke lepimo po istem pravilu kot odseke: pod 1 pt gre za isto besedo
    * (nekateri obrazci šumnike pišejo ločeno), nad tem je presledek.
    */
+  /** Ali v tej vrstici za danim x stoji še kakšno polje? (stolpec tabele) */
+  function poljeDesnoOd(vsaPolja, polje, x, cy) {
+    return vsaPolja.some(
+      (d) =>
+        d !== polje &&
+        d.stran === polje.stran &&
+        d.pravokotnik &&
+        d.pravokotnik.x >= x &&
+        Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 10
+    );
+  }
+
+  /** Prvi kos besedila desno od okenca v isti vrstici (brez omejitve vrzeli). */
+  function prviDesno(kosi, r, mejaDesno) {
+    const cy = r.y + r.height / 2;
+    return (
+      kosi
+        .filter(
+          (k) =>
+            Math.abs(k.y - cy) < 6 && k.x >= r.x + r.width - 2 && k.x < mejaDesno
+        )
+        .sort((a, b) => a.x - b.x)[0] || null
+    );
+  }
+
   function oznakaOkenca(kosi, r, mejaDesno) {
     const cy = r.y + r.height / 2;
     const vrsta = kosi
@@ -649,7 +694,10 @@
       // (npr. "številka računa - plačilnega IBAN") vanjo ne sodi.
       if (Math.abs(vrsta[i].y - vrsta[0].y) > 2) continue;
       const vrzel = vrsta[i].x - konec;
-      if (vrzel > VRZEL_STOLPCA) break; // že drug stolpec
+      // Besede oznake so skupaj (izmerjeno do 4 pt); večja vrzel pomeni, da
+      // se je začelo nekaj drugega - pri Zahtevku stoji 14 pt za okencem
+      // "Ne" cel odstavek o politični izpostavljenosti.
+      if (vrzel > NAJVEC_VRZEL_MED_BESEDAMA) break;
       besedilo += (vrzel >= VRZEL_PRESLEDKA ? " " : "") + vrsta[i].besedilo;
       konec = vrsta[i].x + vrsta[i].w;
     }
@@ -671,11 +719,24 @@
       )
       .reduce((n, o) => Math.min(n, o.pravokotnik.x), Infinity);
 
-    return (
-      oznakaOkenca(stran.kosi, r, mejaDesno) ||
-      najdiGlavoStolpca(stran.kosi, r.x + r.width / 2, cy) ||
-      String(okence.vklop || "").toUpperCase()
-    );
+    // Besedilo, ki ga v svoji vrstici vidi tudi katero DRUGO okence iste
+    // izbire, ni oznaka možnosti, ampak vsebina sosednjega stolpca: pri
+    // Opredelitvi stoji ime produkta desno od obeh okenc (POTREBE in
+    // ZAHTEVE) in bi sicer postalo oznaka tistega, ki mu je bližje.
+    const moj = prviDesno(stran.kosi, r, mejaDesno);
+    const deljeno =
+      moj &&
+      vsaOkenca.some(
+        (o) => o !== okence && o.pravokotnik && prviDesno(stran.kosi, o.pravokotnik, Infinity) === moj
+      );
+
+    const obOkencu = deljeno ? null : oznakaOkenca(stran.kosi, r, mejaDesno);
+    if (obOkencu) return { oznaka: obOkencu, izGlave: false };
+
+    const glava = najdiGlavoStolpca(stran.kosi, r.x + r.width / 2, cy);
+    if (glava) return { oznaka: glava, izGlave: true };
+
+    return { oznaka: String(okence.vklop || "").toUpperCase(), izGlave: false };
   }
 
   /**
@@ -724,7 +785,7 @@
    * polja ("datum začetka" proti "Začetek1"), a le kadar je kratek - dolgi
    * napisi so pojasnila in sodijo pod polje, ne v naslov.
    */
-  function izberiOznako(ime, izPdf) {
+  function izberiOznako(ime, izPdf, tip) {
     const napis = pocistiNapis(izPdf);
     // "Datum rojstva1" -> "Datum rojstva", "Iz-4" -> "Iz"
     let cisto = pocisti(ime).replace(/[\s\-_]*\d+$/, "").replace(/[\s\-_]+$/, "");
@@ -742,6 +803,16 @@
     // Ime polja je pogosto le začetek vprašanja ("ali je bila"), napis na
     // obrazcu pa celo vprašanje. Takrat je napis pravi, čeprav je dolg.
     if (imeJeZacetekNapisa(cisto, napis)) return napis;
+    // Pri okencu je besedilo ob njem sama trditev ("Izključitev dodatnega
+    // zavarovanja za primer brezposelnosti") in je pravilno, tudi kadar je
+    // daljše od napisa nad vnosnim poljem.
+    if (
+      (tip === "CheckBox" || tip === "RadioGroup") &&
+      napis.length <= NAJVEC_ZNAKOV_TRDITVE &&
+      !napis.includes("*")
+    ) {
+      return napis;
+    }
     return napisJeOznaka(napis) ? napis : cisto || pocisti(ime);
   }
 
@@ -760,6 +831,7 @@
 
   /** Je ime polja le prve nekaj besed napisa? ("ali je bila" / cel stavek) */
   const NAJVEC_ZNAKOV_ODREZANEGA = 120;
+  const NAJVEC_ZNAKOV_TRDITVE = 140; // trditev ob okencu je lahko cela poved
   function imeJeZacetekNapisa(ime, napis) {
     if (!napis || napis.length > NAJVEC_ZNAKOV_ODREZANEGA) return false;
     const besede = (s) =>
@@ -925,7 +997,7 @@
   function zdruziVIzbire(polja, strani) {
     const izbirna = polja.filter(
       (p) =>
-        p.tip === "CheckBox" &&
+        (p.tip === "CheckBox" || p.tip === "RadioGroup") &&
         Array.isArray(p.okenca) &&
         new Set(p.okenca.map((o) => o.vklop)).size >= 2
     );
@@ -937,11 +1009,20 @@
       const okenca = [...polje.okenca].sort(
         (a, b) => a.pravokotnik.x - b.pravokotnik.x
       );
-      const moznosti = okenca.map((o) => ({
-        vklop: o.vklop,
-        oznaka: oznakaMoznosti(stran, o, okenca),
-        polozaj: o.polozaj,
-      }));
+      const moznosti = okenca.map((o) => {
+        const najdeno = oznakaMoznosti(stran, o, okenca);
+        return {
+          vklop: o.vklop,
+          oznaka: najdeno.oznaka,
+          izGlave: najdeno.izGlave,
+          polozaj: o.polozaj,
+        };
+      });
+      // Možnosti, poimenovane po GLAVI stolpca (POTREBE / ZAHTEVE), pomenijo
+      // tabelo: ista vrstica ima okenca v več stolpcih, odgovor pa je en
+      // sam. Kjer je vsaka možnost poimenovana po besedilu tik ob okencu, je
+      // to samostojno vprašanje in ga s sosedom ne smemo zliti.
+      const izGlave = moznosti.every((m) => m.izGlave);
 
       // Vprašanje: ime polja, kadar kaj pove ("Spol", "Zavarovalna vsota").
       // Pri obrazcih z imeni tipa "Checkbox7" vzamemo besedilo vrstice.
@@ -963,8 +1044,19 @@
 
       const kljuc = moznosti.map((m) => m.oznaka).join("|");
       const y = polje.polozaj ? polje.polozaj.y : 0;
+      // Dve enaki izbiri v isti vrstici sta en odgovor le, kadar sta v istem
+      // stolpcu strani (POTREBE in ZAHTEVE pri Opredelitvi). Vprašanji v
+      // levem in desnem stolpcu strani sta dve različni vprašanji - pri
+      // Zahtevku stojita izjavi 1 in 2 o politični izpostavljenosti v isti
+      // vrstici, a vsaka v svojem stolpcu.
       const obstojeca = skupine.find(
-        (s) => s.stran === polje.stran && Math.abs(s.y - y) < 0.6 && s.kljuc === kljuc
+        (s) =>
+          s.stran === polje.stran &&
+          Math.abs(s.y - y) < 0.6 &&
+          s.kljuc === kljuc &&
+          s.stolpec === (polje.stolpec ?? 0) &&
+          s.izGlave &&
+          izGlave
       );
       if (obstojeca) {
         obstojeca.polja.push(polje.ime);
@@ -978,6 +1070,8 @@
         stran: polje.stran,
         y,
         kljuc,
+        stolpec: polje.stolpec ?? 0,
+        izGlave,
         polja: [polje.ime],
         oznaka: vprasanje,
         dodatno: pojasnilo,

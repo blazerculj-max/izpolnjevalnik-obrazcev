@@ -92,8 +92,10 @@
           }
           // Potrditveno polje ima lahko VEČ okenc, vsako s svojo vklopno
           // vrednostjo - to je izbira (m/ž, DA/NE), ne kljukica. Zato jih
-          // preberemo vsa, ne le prvega.
-          if (tip === "CheckBox") {
+          // preberemo vsa, ne le prvega. Skupina izbirnih gumbov
+          // (RadioGroup) je isto, le da ji PDF tako reče - tudi ta v
+          // vmesniku sodi med gumbe z možnostmi, ne v spustni seznam.
+          if (tip === "CheckBox" || tip === "RadioGroup") {
             skupno.okenca = p.acroField
               .getWidgets()
               .map((wid) => {
@@ -158,7 +160,7 @@
             ? logika.pocistiNapis(najdeno.oznaka)
             : null;
           p.glava = najdeno.glava || null;
-          p.oznaka = logika.izberiOznako(p.ime, najdeno.oznaka);
+          p.oznaka = logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
           if (najdeno.desno) {
             p.enota = najdeno.desno.enota || null;
             p.pripomba = najdeno.desno.pripomba || null;
@@ -314,22 +316,20 @@
         }
         const tip = tipPolja(polje);
         try {
-          if (tip === "CheckBox") {
-            if (vrednost === true || vrednost === "true") {
-              polje.check();
-            } else if (vrednost === false || vrednost === "false") {
-              polje.uncheck();
-            } else {
-              // Izbrana možnost večokenčnega polja. pdf-lib zna nastaviti le
-              // vklopno vrednost PRVEGA okenca (drugo zavrne z "invalid field
-              // value"), zato vrednost in stanje okenc zapišemo sami.
-              nastaviIzbiro(polje, String(vrednost), opozorila);
-            }
+          if (tip === "CheckBox" && (vrednost === true || vrednost === "true")) {
+            polje.check();
           } else if (
-            tip === "RadioGroup" ||
-            tip === "Dropdown" ||
-            tip === "OptionList"
+            tip === "CheckBox" &&
+            (vrednost === false || vrednost === "false")
           ) {
+            polje.uncheck();
+          } else if (tip === "CheckBox" || tip === "RadioGroup") {
+            // Izbrana možnost večokenčnega polja. pdf-lib zna nastaviti le
+            // vklopno vrednost PRVEGA okenca (drugo zavrne z "invalid field
+            // value"), zato vrednost in stanje okenc zapišemo sami. Skupina
+            // izbirnih gumbov je ista reč z drugim imenom.
+            nastaviIzbiro(polje, String(vrednost), opozorila);
+          } else if (tip === "Dropdown" || tip === "OptionList") {
             polje.select(String(vrednost));
           } else {
             if (pisava) polje.updateAppearances(pisava);
