@@ -38,6 +38,8 @@
   // drugi pa ne - pri teh se telo začne kar na skrajni levi. Meje zato ni
   // mogoče določiti s fiksno številko; izračunamo jo za vsako stran posebej.
   const NAJMANJSA_VRZEL_ROBA = 18; // pt med robnim stolpcem in telesom
+  const NAJVEC_ZNAKOV_NASLOVA = 60; // daljše je poved, ne naslov razdelka
+  const NAJVECJI_ROBNI_STOLPEC = 45; // pt - dlje od leve roba ni več rob
   const NAJVEC_DELEZ_ROBA = 0.25; // več kot toliko besedila ni rob, ampak telo
   const NAJVEC_ODMIK_SEKCIJE = 130; // pt navzgor do naslova razdelka
 
@@ -762,12 +764,15 @@
   function sekcijaOb(stran, y) {
     const rob = robSekcije(stran);
     if (rob === null) return null;
-    const kosi = stran.kosi;
     // Naslov razdelka je samostojna beseda ali dve z veliko začetnico
     // ("Zavarovalec", "Prejemnik računa"). Tako izločimo drobce stavkov,
     // ki po naključju stojijo ob robu ("(izpolniti le, če", "plačevanja").
     const JE_NASLOV = /^[A-ZČŠŽ][a-zčšž]+(\s[a-zčšž]+)?$/;
-    const obRobu = kosi.filter((k) => k.x < rob).sort((a, b) => b.y - a.y);
+    const odseki = stran.odseki || (stran.odseki = razdeliNaOdseke(stran.kosi));
+    const obRobu = odseki
+      .filter((o) => o.od < rob)
+      .map((o) => ({ y: o.y, besedilo: o.besedilo }))
+      .sort((a, b) => b.y - a.y);
     const najden = obRobu
       .filter(
         (k) => k.y >= y - 6 && k.y - y < NAJVEC_ODMIK_SEKCIJE && JE_NASLOV.test(k.besedilo)
@@ -932,17 +937,45 @@
    * pri obrazcu Zahtevek pa je najbližji naslednji rob 27 pt in v pasu je
    * skoraj četrtina besedila - tam torej robnega stolpca ni.
    */
+  /**
+   * Je ta vrstica oštevilčen naslov razdelka ("2. SPREMEMBA PLAČEVANJA
+   * PREMIJE")? Oštevilčena vprašanja v vprašalniku ("1. IMATE OZIROMA VAM
+   * JE BILA ...?") to niso: so predolga in so vprašanja.
+   */
+  function jeStevilcenNaslov(besedilo) {
+    const t = String(besedilo || "");
+    if (!/^\d+\s*\.\s*[A-ZČŠŽ]/.test(t) || t.includes("?")) return false;
+    const oklepaj = t.indexOf("(");
+    const vOklepaju = oklepaj > 0 ? t.slice(oklepaj).replace(/[()]/g, "") : "";
+    const naslov = pocisti(
+      jeNavodiloVOklepaju(vOklepaju) ? t.slice(0, oklepaj) : t
+    );
+    return naslov.length > 0 && naslov.length <= NAJVEC_ZNAKOV_NASLOVA;
+  }
+
   function robSekcije(stran) {
     if (stran.__rob !== undefined) return stran.__rob;
-    const kosi = stran.kosi;
+    // Rob merimo po ZAČETKIH VRSTIC, ne po posameznih koščkih besedila.
+    // pdf.js isto vrstico razreže različno v brskalniku in na strežniku
+    // ("ASNI NASLOV ZA OBVE" je enkrat en košček, drugič štirje), zato bi
+    // šteti koščke pomenilo, da vsako okolje najde drug rob in druge
+    // razdelke. Začetki vrstic so v obeh okoljih isti.
+    const odseki = stran.odseki || (stran.odseki = razdeliNaOdseke(stran.kosi));
     let rob = null;
 
-    if (kosi.length) {
-      const mediana = [...kosi.map((k) => k.x)].sort((a, b) => a - b)[
-        Math.floor(kosi.length / 2)
+    // Stran svoje razdelke oznani na en način: ali z oštevilčenimi naslovi
+    // v telesu ali z naslovi ob robu. Kjer so oštevilčeni naslovi, je levi
+    // stolpec stolpec oznak polj ("Podpisani/a", "IME/PRIIMEK"), ne
+    // razdelkov, in ga ne smemo brati kot rob.
+    const imaStevilcene = odseki.some((o) => jeStevilcenNaslov(o.besedilo));
+
+    if (odseki.length && !imaStevilcene) {
+      const zacetki = odseki.map((o) => o.od);
+      const mediana = [...zacetki].sort((a, b) => a - b)[
+        Math.floor(zacetki.length / 2)
       ];
-      // Levi robovi besedila v levi polovici strani, brez ponovitev.
-      const robovi = [...new Set(kosi.map((k) => Math.round(k.x)))]
+      // Levi robovi vrstic v levi polovici strani, brez ponovitev.
+      const robovi = [...new Set(zacetki.map((x) => Math.round(x)))]
         .filter((x) => x <= mediana)
         .sort((a, b) => a - b);
 
@@ -950,9 +983,13 @@
       // Ob enako velikih vrzelih vzamemo NAJBOLJ DESNO: pri Opredelitvi sta
       // dve po 19 pt (18->37 in 38->57), prava meja pa je tista ob telesu -
       // sicer bi robni stolpec prerezali na pol in izgubili pol naslova.
+      // Iščemo le vrzel, ki se začne ob SKRAJNEM levem robu: robni stolpec
+      // je ozek, vrzeli globlje v telesu pa so lahko še večje (pri Ponudbi
+      // 58 pt sredi strani) in bi meja pristala sredi obrazca.
       let najvecja = 0;
       let mejaPri = null;
       for (let i = 1; i < robovi.length; i++) {
+        if (robovi[i - 1] > robovi[0] + NAJVECJI_ROBNI_STOLPEC) break;
         const vrzel = robovi[i] - robovi[i - 1];
         if (vrzel >= najvecja) {
           najvecja = vrzel;
@@ -960,10 +997,10 @@
         }
       }
 
-      const vPasu = kosi.filter((k) => k.x < mejaPri).length;
+      const vPasu = odseki.filter((o) => o.od < mejaPri).length;
       if (
         najvecja >= NAJMANJSA_VRZEL_ROBA &&
-        vPasu / kosi.length <= NAJVEC_DELEZ_ROBA
+        vPasu / odseki.length <= NAJVEC_DELEZ_ROBA
       ) {
         rob = mejaPri;
       }
@@ -1132,16 +1169,19 @@
       // Naslov je ob robu pogosto prelomljen čez več vrstic - vrstice, ki si
       // tesno sledijo, spadajo skupaj.
       const rob = robSekcije(s);
+      // Tudi blok ob robu sestavimo iz CELIH VRSTIC, ne iz koščkov: sicer
+      // "ZAČASNI NASLOV ZA OBVEŠČANJE" v brskalniku razpade na "ZA Č ASNI
+      // NASLOV ZA OBVE" (glej robSekcije).
       const bloki = [];
-      (rob === null ? [] : s.kosi)
-        .filter((k) => k.x < rob)
+      (rob === null ? [] : s.odseki || (s.odseki = razdeliNaOdseke(s.kosi)))
+        .filter((o) => o.od < rob)
         .sort((a, b) => b.y - a.y)
-        .forEach((k) => {
+        .forEach((o) => {
           const zadnji = bloki[bloki.length - 1];
-          if (zadnji && zadnji.dno - k.y <= 12) {
-            zadnji.vrstice.push(k);
-            zadnji.dno = k.y;
-          } else bloki.push({ vrh: k.y, dno: k.y, vrstice: [k] });
+          if (zadnji && zadnji.dno - o.y <= 12) {
+            zadnji.vrstice.push(o);
+            zadnji.dno = o.y;
+          } else bloki.push({ vrh: o.y, dno: o.y, vrstice: [o] });
         });
 
       // Nekateri obrazci razdelkov ne pišejo ob robu, ampak kot oštevilčene
@@ -1192,7 +1232,9 @@
         // Vprašaj iščemo v CELEM odseku: pri "3. IMATE ... STORITEV (PREGLED,
         // ...)?" stoji za oklepajem, ki ga odrežemo, in bi vprašanje obveljalo
         // za naslov razdelka.
-        if (naslov.length > 60 || o.besedilo.includes("?")) continue;
+        if (naslov.length > NAJVEC_ZNAKOV_NASLOVA || o.besedilo.includes("?")) {
+          continue;
+        }
         izhod.push({
           stran: s.stran,
           y: ((mere.visina - o.y) / mere.visina) * 100,
@@ -1217,11 +1259,11 @@
 
         // Navodilo je lahko tudi v telesu strani, ob začetku razdelka.
         if (!opomba) {
-          const n = s.kosi.find(
-            (k) =>
-              k.x >= rob &&
-              Math.abs(k.y - b.vrh) < 14 &&
-              /^(izpolni|obvezn)/i.test(k.besedilo)
+          const n = odseki.find(
+            (o) =>
+              o.od >= rob &&
+              Math.abs(o.y - b.vrh) < 14 &&
+              /^(izpolni|obvezn)/i.test(o.besedilo)
           );
           if (n) opomba = pocisti(n.besedilo);
         }
