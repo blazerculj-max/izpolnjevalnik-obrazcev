@@ -178,6 +178,15 @@
       .forEach((b) => b.classList.toggle("izbran", b.dataset.datoteka === ime));
   }
 
+  // Prejšnje različice so si šifro prodajnika zapomnile v napravi. Zdaj se
+  // ne shrani nič, zato staro vrednost ob prvem zagonu pobrišemo - sicer bi
+  // na že uporabljenih napravah obležala za vedno.
+  try {
+    localStorage.removeItem("sifra-prodajnika");
+  } catch {
+    /* v zasebnem oknu localStorage ni na voljo; takrat ni kaj brisati */
+  }
+
   // Service worker shrani orodje, da se nameščena aplikacija odpre tudi brez
   // povezave. Smiseln je le na spletu; iz datoteke (file://) ga ni mogoče
   // registrirati in tam tudi ni potreben - vse je že v datoteki.
@@ -282,7 +291,7 @@
         potrebujeSifro: !!m.potrebujeSifro,
         potrebujeIme: !!m.potrebujeIme,
         zaProdajnika: !!m.zaProdajnika,
-        sifra: m.potrebujeSifro ? localStorage.getItem("sifra-prodajnika") || "" : "",
+        sifra: "",
         ime: "",
       };
     });
@@ -667,13 +676,13 @@
         izrisiZnakePodpisov();
       })
     );
+    // Ne šifra ne ime se ne shranita nikamor: živita le v pomnilniku tega
+    // zavihka in z njim izgineta.
     ovoj.querySelectorAll("[data-sifra]").forEach((v) =>
       v.addEventListener("input", () => {
         najdiPas(v.dataset.sifra).sifra = v.value;
-        localStorage.setItem("sifra-prodajnika", v.value);
       })
     );
-    // Ime stranke je njen podatek - v napravi ga ne pustimo za sabo.
     ovoj.querySelectorAll("[data-ime]").forEach((v) =>
       v.addEventListener("input", () => {
         najdiPas(v.dataset.ime).ime = v.value;
@@ -789,9 +798,8 @@
       .forEach((g) => g.classList.remove("izbran"));
     podpisniPasovi.forEach((p) => {
       p.slika = null;
-      // Ime in priimek je strankin podatek in mora iti z ostalimi; šifra
-      // prodajnika je tvoja in ostane, kot ostane med obrazci.
       p.ime = "";
+      p.sifra = "";
     });
     sprostiBlobe();
     const izhod = document.getElementById("izhod-pdf");

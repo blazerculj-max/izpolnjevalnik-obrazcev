@@ -51,14 +51,20 @@ Brskalnik ji torej prepove **sleherno** omrežno povezavo in oddajo obrazca.
 Preverjeno je, da so blokirani vsi običajni kanali: `fetch`, slika kot
 sledilni piksel, `navigator.sendBeacon` in WebSocket.
 
-Kar stran hrani na napravi:
+**Stran na napravi ne hrani ničesar:**
 
 | | |
 |---|---|
 | piškotki | jih ni |
 | `sessionStorage` | prazen |
-| `localStorage` | samo **šifra prodajnika**, če jo vpišeš (tvoj podatek, ne strankin) |
-| podatki stranke | samo v pomnilniku odprtega zavihka |
+| `localStorage` | prazen — niti šifre prodajnika ne |
+| `IndexedDB` | ni nobene baze |
+| predpomnilnik (PWA) | samo datoteka orodja, nič vpisanega |
+| vse vpisano | samo v pomnilniku odprtega zavihka |
+
+Šifro prodajnika je orodje nekoč zapomnilo, da je ni bilo treba vtipkati pri
+vsakem obrazcu; zdaj se ne shrani več. Staro vrednost orodje ob zagonu samo
+pobriše, da na že uporabljenih napravah ne obleži.
 
 Polja imajo izklopljena `autocomplete`, `autocorrect` in `spellcheck`, da si
 jih brskalnik ne zapomni za samodejno izpolnjevanje. Gumb **Počisti vse**
