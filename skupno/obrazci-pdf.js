@@ -416,18 +416,31 @@
           const y = stran.getHeight() - sredinaY - visina / 2;
           stran.drawImage(png, { x, y, width: sirina, height: visina });
 
-          // Šifra prodajnika: če obrazec ima okvir z napisom, jo postavimo
-          // tja (ob napis), sicer nad podpis kot doslej.
-          if (podpis.besedilo && pisava) {
-            const imaMesto =
-              podpis.besedilo_x !== null && podpis.besedilo_x !== undefined;
-            stran.drawText(String(podpis.besedilo), {
-              x: imaMesto ? (podpis.besedilo_x / 100) * stran.getWidth() : x,
-              y: imaMesto
-                ? stran.getHeight() - (podpis.besedilo_y / 100) * stran.getHeight()
-                : y + visina + 2,
-              size: 9,
-              font: pisava,
+          // Vpisane vrstice (ime in priimek, pod njim šifra): če obrazec ima
+          // okvir z napisom, gredo vanj, sicer nad podpis kot doslej.
+          const besedila = Array.isArray(podpis.besedila)
+            ? podpis.besedila
+            : podpis.besedilo
+              ? [
+                  {
+                    besedilo: podpis.besedilo,
+                    x: podpis.besedilo_x,
+                    y: podpis.besedilo_y,
+                  },
+                ]
+              : [];
+          if (pisava) {
+            besedila.forEach((b, i) => {
+              if (!b || !b.besedilo) return;
+              const imaMesto = b.x !== null && b.x !== undefined;
+              stran.drawText(String(b.besedilo), {
+                x: imaMesto ? (b.x / 100) * stran.getWidth() : x,
+                y: imaMesto
+                  ? stran.getHeight() - (b.y / 100) * stran.getHeight()
+                  : y + visina + 2 + i * 10,
+                size: 9,
+                font: pisava,
+              });
             });
           }
         } catch (e) {

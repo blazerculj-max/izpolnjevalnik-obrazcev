@@ -257,9 +257,11 @@
   function pripraviPodpisnePasove() {
     const najdeni = odprtObrazec.shema.podpisi || [];
     podpisniPasovi = najdeni.map((m, i) => {
-      // Kjer v okvir sodi tudi izpisano ime, si s podpisom deli prostor:
-      // podpis se umakne pod vrstico z imenom.
-      const zImenom = m.potrebujeIme && m.zImenom ? m.zImenom : null;
+      // Kjer v okvir sodita tudi izpisano ime (in pod njim šifra), si s
+      // podpisom delita prostor: podpis se umakne pod vpisani vrstici.
+      const vrstic = m.potrebujeIme ? (m.potrebujeSifro ? 2 : 1) : 0;
+      const zImenom =
+        vrstic === 2 ? m.zImenomInSifro : vrstic === 1 ? m.zImenom : null;
       return {
         id: "podpis" + i,
         naziv: lepNaziv(m.naziv),
@@ -272,8 +274,10 @@
           Math.min(PRIVZETA_SIRINA_PODPISA, m.najvecSirina || PRIVZETA_SIRINA_PODPISA)
         ),
         najvecVisina: zImenom ? zImenom.najvecVisina : m.najvecVisina || null,
-        // Mesto besedila v okviru: šifra ob napisu ali ime v vrstici pod njim.
-        mestoBesedila: m.potrebujeIme ? m.ime || null : m.sifra || null,
+        // Mesta vpisanih vrstic v okviru: ime, pod njim šifra. Kjer obrazec
+        // imena ne zahteva, gre šifra po starem kar ob napis.
+        mestoImena: vrstic ? (m.vrstice && m.vrstice[0]) || m.ime || null : null,
+        mestoSifre: vrstic === 2 ? (m.vrstice && m.vrstice[1]) || null : m.sifra || null,
         slika: null,
         potrebujeSifro: !!m.potrebujeSifro,
         potrebujeIme: !!m.potrebujeIme,
@@ -592,16 +596,16 @@
             ${p.slika ? `<img src="${p.slika}" alt="Podpis" />` : "Še ni podpisa"}
           </div>
           ${
-            p.potrebujeSifro
-              ? `<input type="text" class="sifra-vnos" data-sifra="${p.id}"
-                   placeholder="Šifra prodajnika" value="${escapeHtml(p.sifra)}" />`
-              : ""
-          }
-          ${
             p.potrebujeIme
               ? `<input type="text" class="sifra-vnos" data-ime="${p.id}"
                    autocomplete="off" autocorrect="off" spellcheck="false"
                    placeholder="Ime in priimek" value="${escapeHtml(p.ime)}" />`
+              : ""
+          }
+          ${
+            p.potrebujeSifro
+              ? `<input type="text" class="sifra-vnos" data-sifra="${p.id}"
+                   placeholder="Šifra prodajnika" value="${escapeHtml(p.sifra)}" />`
               : ""
           }
           <label class="oznaka-polja velikost-oznaka">
@@ -842,11 +846,12 @@
         y: p.y,
         sirina: p.sirina,
         najvecVisina: p.najvecVisina,
-        besedilo: p.sifra || p.ime || null,
-        // Šifra gre ob napis "šifra in podpis prodajnika", ime pa v vrstico
-        // pod napis "ime in priimek ter podpis ...".
-        besedilo_x: p.mestoBesedila ? p.mestoBesedila.x : null,
-        besedilo_y: p.mestoBesedila ? p.mestoBesedila.y : null,
+        // Ime gre v vrstico pod napis, šifra pa tik pod ime - ali, kjer
+        // obrazec imena ne zahteva, kar ob napis "šifra in podpis".
+        besedila: [
+          p.ime && p.mestoImena ? { besedilo: p.ime, ...p.mestoImena } : null,
+          p.sifra && p.mestoSifre ? { besedilo: p.sifra, ...p.mestoSifre } : null,
+        ].filter(Boolean),
       }));
 
     stanje.textContent = "Pripravljam…";

@@ -397,8 +397,9 @@
           stran: s.stran,
           potrebujeSifro,
           // "ime in priimek ter podpis zavarovane osebe": v okvir sodi tudi
-          // izpisano ime. Kjer obrazec zahteva šifro, je ta že na tem mestu.
-          potrebujeIme: !potrebujeSifro && /ime in priimek/i.test(naziv),
+          // izpisano ime. Kjer napis zahteva oboje ("ime in priimek, šifra
+          // in podpis"), gre šifra v vrstico tik pod ime.
+          potrebujeIme: /ime in priimek/i.test(naziv),
           zaProdajnika: /prodajnik|zastopnik|posrednik/i.test(t),
           ...mestoVOkviru(o, okvir, mere, nadaljevanje ? nadaljevanje.y : o.y),
         });
@@ -495,7 +496,9 @@
         okvir: null,
         sifra: null,
         ime: null,
+        vrstice: null,
         zImenom: null,
+        zImenomInSifro: null,
         najvecSirina: 22,
         najvecVisina: null,
       };
@@ -510,7 +513,23 @@
     // 10 pt pod zadnjo vrstico napisa: strešica na Ž se pri 9 pt že dotakne
     // napisa, kadar je ta prelomljen čez dve vrstici.
     const vrsticaImena = dno - 10;
-    const podImenom = Math.max(vrsticaImena - 3 - (okvir.y + rob), 6);
+    // Okvir lahko sprejme več vpisanih vrstic (ime, pod njim šifra).
+    const VRSTICA = 8; // pt med vpisanima vrsticama
+    const vrstice = [0, 1].map((i) => ({
+      x: vOdstotkihX(okvir.x + rob),
+      y: vOdstotkihY(vrsticaImena - i * VRSTICA),
+    }));
+    // Prostor, ki podpisu ostane pod n vpisanimi vrsticami. Pod 9 pt podpis
+    // ni več berljiv, zato mu toliko pustimo, tudi če sega čez rob okvira -
+    // pod njim je na obrazcu prazen prostor.
+    const prostorPod = (n) => {
+      const dnoPodpisa = okvir.y + 2; // pod podpisom rob ni potreben
+      const visina = Math.max(vrsticaImena - (n - 1) * VRSTICA - 3 - dnoPodpisa, 9);
+      return {
+        y: vOdstotkihY(dnoPodpisa + visina / 2),
+        najvecVisina: (visina / mere.visina) * 100,
+      };
+    };
     return {
       x: vOdstotkihX(okvir.x + okvir.sirina / 2),
       y: vOdstotkihY(okvir.y + Math.max(prostor, 6) / 2),
@@ -525,16 +544,13 @@
         x: vOdstotkihX(Math.min(napis.do + 6, okvir.x + okvir.sirina - 30)),
         y: vOdstotkihY(napis.y),
       },
-      // Ime gre v svojo vrstico pod napis, poravnano na levi rob okvira.
-      ime: {
-        x: vOdstotkihX(okvir.x + rob),
-        y: vOdstotkihY(vrsticaImena),
-      },
-      // Podpis, kadar je nad njim še ime: nižje in v manjšem prostoru.
-      zImenom: {
-        y: vOdstotkihY(okvir.y + rob + podImenom / 2),
-        najvecVisina: (podImenom / mere.visina) * 100,
-      },
+      // Vpisane vrstice pod napisom, poravnane na levi rob okvira: prva je
+      // ime in priimek, druga (kjer jo obrazec zahteva) šifra.
+      vrstice,
+      ime: vrstice[0],
+      // Podpis, kadar je nad njim ena oz. dve vpisani vrstici.
+      zImenom: prostorPod(1),
+      zImenomInSifro: prostorPod(2),
       najvecSirina: ((okvir.sirina - 2 * rob) / mere.sirina) * 100,
       najvecVisina: (Math.max(prostor, 6) / mere.visina) * 100,
     };
