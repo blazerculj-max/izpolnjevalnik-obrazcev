@@ -329,6 +329,27 @@
    * Upoštevamo samo kratke napise - dolgi odstavki, ki omenjajo podpis, niso
    * mesta za podpis. Vrne položaje v odstotkih strani (izhodišče zgoraj levo).
    */
+  // "ime in priimek ter podpis zakonitega zastopnika" meri 47 znakov, zato je
+  // meja za odstavek nekoliko višja od najdaljšega znanega napisa.
+  const NAJVEC_ZNAKOV_PODPISA = 60;
+
+  /**
+   * Napis mesta za podpis je pogosto prelomljen ("ime in priimek, šifra in
+   * podpis" / "predstavnika zavarovalnice"). Nadaljevanje stoji tik pod njim,
+   * v istem stolpcu in z malo začetnico.
+   */
+  function nadaljevanjeNapisa(odseki, napis) {
+    const pod = odseki.find(
+      (o) =>
+        o !== napis &&
+        napis.y - o.y > 2 &&
+        napis.y - o.y < 12 &&
+        Math.abs(o.od - napis.od) < 25 &&
+        /^[a-zčšž]/.test(o.besedilo)
+    );
+    return pod ? pod.besedilo : "";
+  }
+
   function najdiMestaPodpisov(strani, mereStrani) {
     const najdeni = [];
     strani.forEach((s) => {
@@ -339,12 +360,14 @@
       for (const o of odseki) {
         const t = o.besedilo;
         if (!/\bpodpis\b/i.test(t)) continue;
-        if (t.length > 46) continue; // odstavek, ne napis polja
+        if (t.length > NAJVEC_ZNAKOV_PODPISA) continue; // odstavek, ne napis polja
         if (/\bs podpisom\b|podpisane|podpisani/i.test(t)) continue;
 
         const okvir = najdiOkvirNapisa(s.okvirji, o);
         najdeni.push({
-          naziv: t.replace(/\*/g, "").trim(),
+          naziv: popraviPomanjsaneVerzalke(
+            pocisti(t + " " + nadaljevanjeNapisa(odseki, o)).replace(/\*/g, "")
+          ),
           stran: s.stran,
           potrebujeSifro: /šifra|sifra/i.test(t),
           zaProdajnika: /prodajnik|zastopnik|posrednik/i.test(t),
@@ -352,7 +375,58 @@
         });
       }
     });
+    // Na isti strani sta lahko dve mesti z enakim nazivom (dve zavarovani
+    // osebi v isti vrstici). Da ju je v seznamu mogoče ločiti, ju oštevilčimo
+    // po vrsti z leve proti desni.
+    const poNazivu = new Map();
+    najdeni.forEach((p) => {
+      const k = p.stran + "|" + p.naziv;
+      if (!poNazivu.has(k)) poNazivu.set(k, []);
+      poNazivu.get(k).push(p);
+    });
+    for (const skupina of poNazivu.values()) {
+      if (skupina.length < 2) continue;
+      skupina
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+        .forEach((p, i) => {
+          p.naziv += ` (${i + 1}.)`;
+        });
+    }
     return najdeni;
+  }
+
+  /**
+   * Nekateri obrazci pišejo z zmanjšanimi verzalkami, ki jih PDF vrne kot
+   * velike črke sredi besede ("pooBlaŠčenca"). Kratice (ZDA, EUR) pustimo.
+   */
+  function popraviPomanjsaneVerzalke(niz) {
+    return String(niz || "")
+      .split(" ")
+      .map((b) => (/^[a-zčšž].*[A-ZČŠŽ]/.test(b) ? b.toLowerCase() : b))
+      .join(" ");
+  }
+
+  /**
+   * Polja, ki ležijo v okviru za podpis, označi z .vPodpisu. To so vnosna
+   * polja, ki jih obrazec predvidi za ime, šifro in podpis - v spletnem
+   * obrazcu nimajo kaj početi, ker jih pokrije narisan podpis.
+   */
+  function oznaciPoljaVPodpisih(polja, podpisi) {
+    const zOkvirjem = (podpisi || []).filter((p) => p.okvir);
+    if (!zOkvirjem.length) return;
+    polja.forEach((p) => {
+      if (!p.polozaj) return;
+      const cx = p.polozaj.x + p.polozaj.sirina / 2;
+      const cy = p.polozaj.y + p.polozaj.visina / 2;
+      p.vPodpisu = zOkvirjem.some(
+        (q) =>
+          q.stran === p.stran &&
+          cx >= q.okvir.x &&
+          cx <= q.okvir.x + q.okvir.sirina &&
+          cy >= q.okvir.y &&
+          cy <= q.okvir.y + q.okvir.visina
+      );
+    });
   }
 
   /** Najtesnejši narisan okvir, ki obdaja ta napis (celica tabele). */
@@ -1173,6 +1247,7 @@
     najdiOznakoVrstice,
     oznaciPolja,
     najdiMestaPodpisov,
+    oznaciPoljaVPodpisih,
     zdruziVVrstice,
     zdruziVIzbire,
     najdiRazdelke,

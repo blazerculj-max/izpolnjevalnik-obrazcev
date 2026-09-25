@@ -323,7 +323,8 @@
     // papirju) - tu ga samo upoštevamo.
     const elementi = [
       ...shema.polja
-        .filter((p) => !vVrsticah.has(p.ime) && !vIzbirah.has(p.ime))
+        // Polja v okviru za podpis ureja plošča s podpisi, ne ta obrazec.
+        .filter((p) => !vVrsticah.has(p.ime) && !vIzbirah.has(p.ime) && !p.vPodpisu)
         .map((p) => ({ vir: p, html: poljeVHtml(p) })),
       ...(shema.vrstice || []).map((v) => ({ vir: v, html: vrsticaVHtml(v) })),
       ...(shema.izbire || []).map((i) => ({ vir: i, html: izbiraVHtml(i) })),

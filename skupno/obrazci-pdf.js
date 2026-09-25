@@ -167,6 +167,9 @@
           }
         });
         podpisi = logika.najdiMestaPodpisov(straniBesedila, strani);
+        // Polja v okviru za podpis (ime, šifra, podpis) pokrije narisan
+        // podpis; v spletnem obrazcu jih ne ponujamo.
+        logika.oznaciPoljaVPodpisih(polja, podpisi);
       } else {
         polja.forEach((p) => {
           p.oznaka = p.ime;
