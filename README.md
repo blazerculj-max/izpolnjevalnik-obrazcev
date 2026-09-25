@@ -28,6 +28,12 @@ Brez namestitve, brez prijave, brez strežnika, ki bi karkoli obdeloval.
 - polja **razvrsti po razdelkih obrazca** ("Zavarovalec", "Zavarovanje
   Operacije") in prikaže navodila, ki jih obrazec zapiše zraven
   ("izpolniti le, če zavarovalec in zavarovanec nista ista oseba");
+- **dvostolpčne obrazce bere po stolpcih**, ne po vrsticah: kjer so levo
+  osebni podatki in desno naslov prebivališča, si polja sledijo tako kot na
+  papirju in ne skačejo z leve na desno;
+- znotraj razdelka loči **sklope**, ki jih obrazec piše z manjšim naslovom
+  ("Osebni dokument", "Naslov stalnega prebivališča", "Podatki o poškodbi");
+  od oznak polj jih loči pisava, ne lega;
 - izvozi PDF z **zaklenjenimi polji**, pripravljen za tisk in pošiljanje;
 - šumniki so pravilni — vgrajena je pisava DejaVu Sans (privzeta pisava PDF
   obrazcev ne pozna črke »č«).
