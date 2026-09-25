@@ -223,6 +223,10 @@
             x: x.transform[4],
             y: x.transform[5],
             w: x.width,
+            // Naslove razdelkov obrazec piše z drugo, večjo pisavo kot oznake
+            // polj. To je edini zanesljiv znak, po katerem ju ločimo.
+            pisava: x.fontName,
+            visina: x.height,
           })),
       });
     }
@@ -315,51 +319,46 @@
     // Polja, ki so del izbire, ne prikazujemo posebej - izbira jih pokrije.
     const vIzbirah = new Set((shema.izbire || []).flatMap((i) => i.polja));
 
-    // Vse skupaj postavimo v vrstni red, kot si sledi na papirju.
+    // Vrstni red določi shema (po razdelkih in stolpcih, kot si sledijo na
+    // papirju) - tu ga samo upoštevamo.
     const elementi = [
       ...shema.polja
         .filter((p) => !vVrsticah.has(p.ime) && !vIzbirah.has(p.ime))
-        .map((p) => ({ stran: p.stran, y: p.polozaj?.y ?? 0, html: poljeVHtml(p) })),
-      ...(shema.vrstice || []).map((v) => ({
-        stran: v.stran,
-        y: v.y,
-        html: vrsticaVHtml(v),
-      })),
-      ...(shema.izbire || []).map((i) => ({
-        stran: i.stran,
-        y: i.y,
-        html: izbiraVHtml(i),
-      })),
-    ].sort((a, b) => a.stran - b.stran || a.y - b.y);
+        .map((p) => ({ vir: p, html: poljeVHtml(p) })),
+      ...(shema.vrstice || []).map((v) => ({ vir: v, html: vrsticaVHtml(v) })),
+      ...(shema.izbire || []).map((i) => ({ vir: i, html: izbiraVHtml(i) })),
+    ].sort((a, b) => (a.vir.zaporedje ?? 0) - (b.vir.zaporedje ?? 0));
 
     const razdelki = shema.razdelki || [];
-    const DOPUST = 2; // %: naslov ob robu je poravnan na sredino svojega bloka
-    // Polja združimo po razdelkih obrazca ("Zavarovalec", "Zavarovanje
-    // Operacije"), ne le po straneh - tako je vidno, kaj spada skupaj in kaj
-    // je treba izpolniti le pogojno.
-    const razdelekZa = (e) => {
-      const kandidati = razdelki.filter(
-        (r) => r.stran === e.stran && r.y <= e.y + DOPUST
-      );
-      return kandidati.length ? kandidati[kandidati.length - 1] : null;
-    };
+    const podrazdelki = shema.podrazdelki || [];
 
+    // Polja združimo po razdelkih obrazca ("Zavarovalec", "2. Podatki o
+    // zavarovalnem primeru"), znotraj njih pa po sklopih, ki jih obrazec piše
+    // z manjšim naslovom ("Osebni dokument", "Naslov stalnega prebivališča").
     const skupine = [];
     let tekoca = null;
+    let tekociSklop = null;
     for (const e of elementi) {
-      const r = razdelekZa(e);
-      const kljuc = r ? r.stran + "|" + r.naslov : "stran" + e.stran;
+      const r = e.vir.razdelek >= 0 ? razdelki[e.vir.razdelek] : null;
+      const pr = e.vir.podrazdelek >= 0 ? podrazdelki[e.vir.podrazdelek] : null;
+      const kljuc = r ? e.vir.stran + "|" + e.vir.razdelek : "stran" + e.vir.stran;
       if (!tekoca || tekoca.kljuc !== kljuc) {
         tekoca = {
           kljuc,
-          naslov: r ? r.naslov : "Stran " + e.stran,
+          naslov: r ? r.naslov : "Stran " + e.vir.stran,
           opomba: r ? r.opomba : null,
-          stran: e.stran,
-          deli: [],
+          stran: e.vir.stran,
+          sklopi: [],
         };
         skupine.push(tekoca);
+        tekociSklop = null;
       }
-      tekoca.deli.push(e.html);
+      const sklopKljuc = pr ? String(e.vir.podrazdelek) : "";
+      if (!tekociSklop || tekociSklop.kljuc !== sklopKljuc) {
+        tekociSklop = { kljuc: sklopKljuc, naslov: pr ? pr.naslov : null, deli: [] };
+        tekoca.sklopi.push(tekociSklop);
+      }
+      tekociSklop.deli.push(e.html);
     }
 
     const skupineHtml = skupine
@@ -367,7 +366,13 @@
         (s) => `<div class="polja-skupina">
             <h3>${escapeHtml(s.naslov)} <span class="stran-oznaka">str. ${s.stran}</span></h3>
             ${s.opomba ? `<p class="opomba-razdelka">${escapeHtml(s.opomba)}</p>` : ""}
-            <div class="mreza-polj">${s.deli.join("")}</div>
+            ${s.sklopi
+              .map(
+                (k) =>
+                  (k.naslov ? `<h4 class="naslov-sklopa">${escapeHtml(k.naslov)}</h4>` : "") +
+                  `<div class="mreza-polj">${k.deli.join("")}</div>`
+              )
+              .join("")}
           </div>`
       )
       .join("");

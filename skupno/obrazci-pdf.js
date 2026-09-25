@@ -141,11 +141,16 @@
       const strani = mereStrani(doc);
       const polja = preberiPolja(doc, strani);
 
+      // Obrazec je lahko postavljen v dva stolpca; brati ga je treba po
+      // stolpcih, sicer polja skačejo z leve na desno in nazaj. Stolpce
+      // določimo pred oznakami, ker napis iz sosednjega stolpca ni naš.
+      const meje = logika.dolociStolpce(polja);
+
       // Imena polj so pogosto neuporabna ("Checkbox1"), zato oznako preberemo
       // iz besedila, ki v PDF-ju stoji ob polju.
       let podpisi = [];
       if (straniBesedila && straniBesedila.length) {
-        const oznake = logika.oznaciPolja(straniBesedila, polja);
+        const oznake = logika.oznaciPolja(straniBesedila, polja, meje);
         polja.forEach((p) => {
           const najdeno = oznake.get(p.ime);
           if (!najdeno) return;
@@ -178,26 +183,85 @@
         .zdruziVVrstice(polja)
         .filter((v) => !v.odgovori.some((o) => o.polja.some((n) => vIzbirah.has(n))));
 
+      const imaBesedilo = !!(straniBesedila && straniBesedila.length);
+      const razdelki = imaBesedilo
+        ? logika.najdiRazdelke(straniBesedila, strani)
+        : [];
+      // Naslovi sklopov znotraj razdelka; tiste, ki so že razdelek, izpustimo.
+      const podrazdelki = (
+        imaBesedilo
+          ? logika.najdiPodrazdelke(straniBesedila, strani, polja, meje)
+          : []
+      ).filter(
+        (p) =>
+          !razdelki.some((r) => r.stran === p.stran && Math.abs(r.y - p.y) < 1)
+      );
+
+      // Naslov velja za polja POD njim; ob robu je poravnan na sredino svojega
+      // bloka, zato dopustimo nekaj odstotka strani nazaj navzgor.
+      const DOPUST = 2;
+      const zadnjiNad = (seznam, p, dodatno) => {
+        let naj = -1;
+        seznam.forEach((r, i) => {
+          if (r.stran !== p.stran || r.y > (p.polozaj?.y ?? 0) + DOPUST) return;
+          if (dodatno && !dodatno(r)) return;
+          naj = i;
+        });
+        return naj;
+      };
+      polja.forEach((p) => {
+        p.razdelek = zadnjiNad(razdelki, p);
+        const odY = p.razdelek >= 0 ? razdelki[p.razdelek].y : -Infinity;
+        // Naslov v desnem stolpcu velja samo za desni stolpec in samo znotraj
+        // svojega razdelka.
+        p.podrazdelek = zadnjiNad(
+          podrazdelki,
+          p,
+          (r) => r.stolpec === (p.stolpec ?? 0) && r.y >= odY
+        );
+      });
+
+      // Polja uredimo tako, kot si sledijo na papirju: razdelek za razdelkom,
+      // v vsakem stolpec za stolpcem, v vsakem sklop za sklopom.
+      // Vrstni red zapišemo, da se ga drži tudi vmesnik.
+      polja.sort(
+        (a, b) =>
+          a.stran - b.stran ||
+          a.razdelek - b.razdelek ||
+          (a.stolpec ?? 0) - (b.stolpec ?? 0) ||
+          a.podrazdelek - b.podrazdelek ||
+          (a.polozaj?.y ?? 0) - (b.polozaj?.y ?? 0) ||
+          (a.polozaj?.x ?? 0) - (b.polozaj?.x ?? 0)
+      );
+      polja.forEach((p, i) => {
+        p.zaporedje = i;
+      });
+
+      // Izbire in vrstice sledijo prvemu svojemu polju in podedujejo njegov
+      // razdelek, da pristanejo v isti skupini.
+      const poImenu = new Map(polja.map((p) => [p.ime, p]));
+      const prvoPolje = (imena) =>
+        imena
+          .map((n) => poImenu.get(n))
+          .filter(Boolean)
+          .sort((a, b) => a.zaporedje - b.zaporedje)[0] || null;
+      const podedujOd = (cilj, imena) => {
+        const p = prvoPolje(imena);
+        if (!p) return;
+        cilj.zaporedje = p.zaporedje;
+        cilj.razdelek = p.razdelek;
+        cilj.podrazdelek = p.podrazdelek;
+      };
+      izbire.forEach((i) => podedujOd(i, i.polja));
+      vrstice.forEach((v) => podedujOd(v, v.odgovori.flatMap((o) => o.polja)));
+
       // pravokotnikov v točkah vmesnik ne potrebuje
       polja.forEach((p) => {
         delete p.pravokotnik;
         if (p.okenca) p.okenca.forEach((o) => delete o.pravokotnik);
       });
 
-      // Polja uredimo tako, kot si sledijo na papirju (od zgoraj navzdol, levo desno)
-      polja.sort(
-        (a, b) =>
-          a.stran - b.stran ||
-          (a.polozaj?.y ?? 0) - (b.polozaj?.y ?? 0) ||
-          (a.polozaj?.x ?? 0) - (b.polozaj?.x ?? 0)
-      );
-
-      const razdelki =
-        straniBesedila && straniBesedila.length
-          ? logika.najdiRazdelke(straniBesedila, strani)
-          : [];
-
-      return { strani, polja, podpisi, vrstice, izbire, razdelki };
+      return { strani, polja, podpisi, vrstice, izbire, razdelki, podrazdelki };
     }
 
     /**

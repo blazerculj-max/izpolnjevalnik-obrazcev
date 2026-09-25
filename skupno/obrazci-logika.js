@@ -59,7 +59,14 @@
           tekoci = null;
         }
         if (!tekoci) {
-          tekoci = { y: k.y, od: k.x, do: k.x + k.w, besedilo: k.besedilo };
+          tekoci = {
+            y: k.y,
+            od: k.x,
+            do: k.x + k.w,
+            besedilo: k.besedilo,
+            pisava: k.pisava,
+            visina: k.visina,
+          };
         } else {
           const locilo = k.x - tekoci.do >= VRZEL_PRESLEDKA ? " " : "";
           tekoci.besedilo += locilo + k.besedilo;
@@ -72,6 +79,8 @@
       y: o.y,
       od: o.od,
       do: o.do,
+      pisava: o.pisava,
+      visina: o.visina,
       besedilo: o.besedilo.replace(/\s+/g, " ").trim(),
     }));
   }
@@ -120,12 +129,19 @@
     };
   }
 
-  /** Besedilo, ki opisuje vrstico tega polja. */
-  function najdiOznakoVrstice(odseki, polje, vsaPolja) {
+  /**
+   * Besedilo, ki opisuje vrstico tega polja.
+   * @param {number|null} mejaStolpca - x meje med stolpcema strani; napis iz
+   *   levega stolpca ne pripada polju v desnem (glej dolociStolpce).
+   */
+  function najdiOznakoVrstice(odseki, polje, vsaPolja, stran, mejaStolpca) {
     const r = polje.pravokotnik;
     const pas = pasVrstice(polje, vsaPolja);
+    // Besedilo robnega stolpca je naslov razdelka, ne oznaka polja.
+    const rob = stran ? robSekcije(stran) : null;
     const vPasu = odseki.filter(
       (o) =>
+        (rob === null || o.od >= rob) &&
         o.y >= pas.spodaj &&
         o.y <= pas.zgoraj &&
         // Dvočrkovni napisi so lahko povsem pravi ("IZ", "NA" v tabeli
@@ -163,8 +179,22 @@
       const sidro = kandidati.reduce((a, b) =>
         oceni(b, vrzelDo(b)) < oceni(a, vrzelDo(a)) ? b : a
       );
-      // Večvrstične oznake nadaljujemo po istem stolpcu.
-      const stolpec = vPasu.filter((o) => Math.abs(o.od - sidro.od) < 25);
+      // Večvrstične oznake nadaljujemo po istem stolpcu, a le po SOSEDNJIH
+      // vrsticah: sicer se pripne še naslov razdelka nad poljem ("1. Podatki
+      // o zavarovani osebi*" stoji 22 pt nad napisom "ime in priimek").
+      const vStolpcu = vPasu
+        .filter((o) => Math.abs(o.od - sidro.od) < 25)
+        .sort((a, b) => b.y - a.y);
+      const i = vStolpcu.indexOf(sidro);
+      const stolpec = [sidro];
+      for (let j = i - 1; j >= 0; j--) {
+        if (vStolpcu[j].y - stolpec[stolpec.length - 1].y > 14) break;
+        stolpec.push(vStolpcu[j]);
+      }
+      for (let j = i + 1; j < vStolpcu.length; j++) {
+        if (stolpec[stolpec.length - 1].y - vStolpcu[j].y > 14) break;
+        stolpec.push(vStolpcu[j]);
+      }
       let besedilo = zdruzi(stolpec);
 
       // Stolpčna oznaka ("IZ", "NA" v tabeli sprememb) sama zase ne pove,
@@ -178,14 +208,17 @@
       }
       return {
         besedilo,
+        od: sidro.od,
         vrzel: vrzelDo(sidro),
         ocena: oceni(sidro, vrzelDo(sidro)) * utez,
       };
     };
 
     const levo = izberi(
-      vPasu.filter((o) => o.do <= r.x + 2),
-      (o) => r.x - o.do,
+      // Napis se sme malo zaliti v polje: "ime in priimek" sega 5 pt čezenj,
+      // ker okvir na obrazcu zajema napis in vpisni prostor skupaj.
+      vPasu.filter((o) => o.od < r.x && o.do <= r.x + 15),
+      (o) => Math.max(0, r.x - o.do),
       PREDNOST_LEVE
     );
     // Desno besedilo omejimo z naslednjim poljem v isti vrstici: kar stoji za
@@ -236,7 +269,26 @@
     // okencu v stolpcu POTREBE celo bližje (29 pt) od trditve (48 pt). Zgolj
     // razdalja ju torej ne loči. Loči pa ju dolžina: cela poved na levi je
     // trditev, kratek napis pa je lahko le naslov razdelka.
-    if (levo.besedilo.length > 25 && levo.vrzel < 200) return levo.besedilo;
+    // Prednost leve strani velja le znotraj istega stolpca. Okence "Ostalo"
+    // med prilogami stoji v desnem stolpcu, levo od njega v isti vrstici pa
+    // je cela poved, ki pripada okencu levega stolpca; ta si je torej ne sme
+    // vzeti kar zato, ker je poved. Na razdaljo se še vedno lahko potegujeta.
+    const levoJeTuj =
+      mejaStolpca != null && r.x >= mejaStolpca && levo.od < mejaStolpca;
+
+    // V tabeli Opredelitve stoji ime produkta med obema stolpcema okenc in je
+    // okencu v stolpcu POTREBE celo bližje (29 pt) od trditve (48 pt). Zgolj
+    // razdalja ju torej ne loči. Loči pa ju dolžina: cela poved na levi je
+    // trditev, kratek napis pa je lahko le naslov razdelka.
+    if (!levoJeTuj && levo.besedilo.length > 25 && levo.vrzel < 200) {
+      return levo.besedilo;
+    }
+
+    // Napis stoji pred poljem. Kadar je levi kandidat blizu, je to on - tudi
+    // če je desni za las bližje: pri "datum_rojstva" stoji desno beseda
+    // "kraj", ki je oznaka NASLEDNJEGA polja (razlika v oceni je bila 15
+    // proti 16,8). Besedilo robnega stolpca je iz kandidatov že izločeno.
+    if (!levoJeTuj && levo.vrzel <= 60) return levo.besedilo;
 
     return desno.ocena < levo.ocena ? desno.besedilo : levo.besedilo;
 
@@ -246,7 +298,7 @@
    * Vsakemu polju pripiše oznako iz besedila ob njem in glavo stolpca.
    * @returns {Map<string,{oznaka:string|null, glava:string|null}>}
    */
-  function oznaciPolja(strani, polja) {
+  function oznaciPolja(strani, polja, meje) {
     const oznake = new Map();
     for (const polje of polja) {
       const stran = strani[polje.stran - 1];
@@ -255,7 +307,13 @@
       const odseki = stran.odseki || razdeliNaOdseke(stran.kosi);
       stran.odseki = odseki;
       oznake.set(polje.ime, {
-        oznaka: najdiOznakoVrstice(odseki, polje, polja),
+        oznaka: najdiOznakoVrstice(
+          odseki,
+          polje,
+          polja,
+          stran,
+          meje ? meje.get(polje.stran) : null
+        ),
         desno: polje.tip === "TextField" ? najdiDesnoPripombo(odseki, polje) : null,
         glava:
           polje.tip === "CheckBox"
@@ -566,10 +624,52 @@
   function izberiOznako(ime, izPdf) {
     const napis = pocistiNapis(izPdf);
     // "Datum rojstva1" -> "Datum rojstva", "Iz-4" -> "Iz"
-    const cisto = pocisti(ime).replace(/[\s\-_]*\d+$/, "").replace(/[\s\-_]+$/, "");
+    let cisto = pocisti(ime).replace(/[\s\-_]*\d+$/, "").replace(/[\s\-_]+$/, "");
+    // "ime_priimek_zdravnik" je strojno ime, ne napis - ločila razvežemo.
+    if (jeStrojnoIme(ime)) cisto = pocistiNapis(cisto.replace(/[_\-]+/g, " "));
     if (!napis) return cisto || pocisti(ime);
     if (imeJeNeuporabno(ime)) return napis;
+    // Strojno ime je zapisal človek, ki je obrazec pripravil, zato je napis
+    // pred njim - razen kadar je napis le ena ali dve besedi, ime pa veliko
+    // bolj določno: "Datum" je za "ime_priimek_podpis_predstavnika_
+    // zavarovalnice" pobran iz sosednje vrstice podpisne tabele.
+    if (jeStrojnoIme(ime)) {
+      return stevBesed(napis) <= 2 && stevBesed(cisto) >= 4 ? cisto : napis;
+    }
+    // Ime polja je pogosto le začetek vprašanja ("ali je bila"), napis na
+    // obrazcu pa celo vprašanje. Takrat je napis pravi, čeprav je dolg.
+    if (imeJeZacetekNapisa(cisto, napis)) return napis;
     return napisJeOznaka(napis) ? napis : cisto || pocisti(ime);
+  }
+
+  /** Število besed (ločila niso beseda). */
+  function stevBesed(niz) {
+    return String(niz || "")
+      .split(/[\s_\-./]+/)
+      .filter((b) => /[a-zčšž0-9]/i.test(b)).length;
+  }
+
+  /** "ime_priimek_zdravnik", "podpis__zavarovane-osebe" - ime iz urejevalnika. */
+  function jeStrojnoIme(ime) {
+    const t = String(ime || "");
+    return t.includes("_") && !/\s/.test(t);
+  }
+
+  /** Je ime polja le prve nekaj besed napisa? ("ali je bila" / cel stavek) */
+  const NAJVEC_ZNAKOV_ODREZANEGA = 120;
+  function imeJeZacetekNapisa(ime, napis) {
+    if (!napis || napis.length > NAJVEC_ZNAKOV_ODREZANEGA) return false;
+    const besede = (s) =>
+      String(s)
+        .toLowerCase()
+        .split(/[\s_\-./]+/)
+        .filter((b) => /[a-zčšž0-9]/i.test(b));
+    const bi = besede(ime);
+    const bn = besede(napis);
+    // Ena sama beseda še ni odrezan stavek; dva enako dolga napisa pa nista
+    // začetek in nadaljevanje istega.
+    if (bi.length < 2 || bi.length >= bn.length) return false;
+    return bi.every((b, i) => b === bn[i]);
   }
 
   /**
@@ -579,7 +679,7 @@
    * obrazcih povedno ("Datum rojstva").
    */
   function napisJeOznaka(napis) {
-    if (napis.length > 40) return false;
+    if (napis.length > 50) return false;
     if (napis.includes("*")) return false; // opomba k obveznemu polju
 
     // Štejemo samo besede; ločila ("/", "—") niso beseda.
@@ -896,6 +996,97 @@
     return izhod.sort((a, b) => a.stran - b.stran || a.y - b.y);
   }
 
+  // --- podrazdelki -------------------------------------------------------
+  // Znotraj oštevilčenega razdelka obrazec sklope loči z manjšimi naslovi
+  // ("Osebni dokument", "Naslov stalnega prebivališča", "Podatki o poškodbi:").
+  // Od oznak polj jih ne loči ne lega ne velika začetnica - loči jih PISAVA:
+  // naslovi so pisani z drugo, višjo pisavo kot oznake. To je edini znak, ki
+  // drži na vseh preizkušenih obrazcih.
+  const NAJMANJSI_PRIRASTEK_PISAVE = 0.8; // pt nad telesno pisavo
+  const NAJVECJI_KOLICNIK_PISAVE = 2.2; // več je naslov obrazca, ne razdelka
+  const DOPUST_ROBA_PODRAZDELKA = 3; // pt: naslov stoji levo od oznak polj
+  const NAJVEC_ZNAKOV_PODRAZDELKA = 50;
+
+  /** Najpogostejša višina pisave na strani - to je telo, ne naslovi. */
+  function telesnaVisinaPisave(kosi) {
+    const stevec = new Map();
+    for (const k of kosi) {
+      if (!k.visina) continue;
+      const kljuc = k.visina.toFixed(1);
+      stevec.set(kljuc, (stevec.get(kljuc) || 0) + 1);
+    }
+    let najboljsi = null;
+    for (const [v, n] of stevec) {
+      if (!najboljsi || n > najboljsi[1]) najboljsi = [Number(v), n];
+    }
+    return najboljsi ? najboljsi[0] : null;
+  }
+
+  /**
+   * Naslovi sklopov znotraj razdelka. Vsakemu pripišemo tudi stolpec, ker
+   * naslov v desnem stolpcu ("Naslov stalnega prebivališča") velja samo za
+   * polja svojega stolpca.
+   *
+   * @param {Array} polja - polja s .pravokotnik in .stolpec (glej dolociStolpce)
+   * @param {Map} meje - stran -> x meje med stolpcema
+   */
+  function najdiPodrazdelke(strani, mereStrani, polja, meje) {
+    const izhod = [];
+    strani.forEach((s) => {
+      const mere = mereStrani[s.stran - 1];
+      if (!mere) return;
+      const telo = telesnaVisinaPisave(s.kosi);
+      if (!telo) return;
+
+      const naStrani = polja.filter((p) => p.stran === s.stran && p.pravokotnik);
+      if (!naStrani.length) return;
+      const meja = meje.get(s.stran);
+      const stolpecOdseka = (o) => (meja != null && o.od >= meja ? 1 : 0);
+
+      const odseki = s.odseki || (s.odseki = razdeliNaOdseke(s.kosi));
+
+      // Levi rob vsakega stolpca: naslovi stojijo nanj, oznake polj so
+      // zamaknjene nekaj točk desno.
+      const robStolpca = new Map();
+      odseki.forEach((o) => {
+        const c = stolpecOdseka(o);
+        if (!robStolpca.has(c) || o.od < robStolpca.get(c)) robStolpca.set(c, o.od);
+      });
+
+      for (const o of odseki) {
+        if (!o.visina || o.visina < telo + NAJMANJSI_PRIRASTEK_PISAVE) continue;
+        if (o.visina > telo * NAJVECJI_KOLICNIK_PISAVE) continue; // naslov obrazca
+        const c = stolpecOdseka(o);
+        if (o.od > robStolpca.get(c) + DOPUST_ROBA_PODRAZDELKA) continue;
+
+        const naslov = pocisti(o.besedilo);
+        if (naslov.length < 3 || naslov.length > NAJVEC_ZNAKOV_PODRAZDELKA) continue;
+        if (naslov.includes("?")) continue;
+        if (!/^([IVX]+\.|\d+\.|[A-ZČŠŽ])/.test(naslov)) continue;
+
+        // Besedilo, ki leži V polju ali ob njem, je vsebina, ne naslov.
+        const vPolju = naStrani.some((p) => {
+          const r = p.pravokotnik;
+          return (
+            o.y > r.y - 2 &&
+            o.y < r.y + r.height + 2 &&
+            o.do > r.x &&
+            o.od < r.x + r.width
+          );
+        });
+        if (vPolju) continue;
+
+        izhod.push({
+          stran: s.stran,
+          stolpec: c,
+          y: ((mere.visina - o.y) / mere.visina) * 100,
+          naslov: naslov.replace(/\s*:\s*$/, ""),
+        });
+      }
+    });
+    return izhod.sort((a, b) => a.stran - b.stran || a.y - b.y);
+  }
+
   // Nekateri obrazci nimajo prave preslikave v Unicode in vrnejo kar bajte
   // kodne strani Windows-1250. Ti pristanejo v območju nadzornih znakov
   // U+0080..U+009F, kjer pravega besedila nikoli ni - zato jih smemo
@@ -914,9 +1105,66 @@
     return String(niz).replace(/[\u0080-\u009F]/g, (z) => WIN1250[z.charCodeAt(0)] || "");
   }
 
+  // Obrazec je lahko postavljen v dva stolpca (levo osebni podatki, desno
+  // naslovi). Brati ga je treba po stolpcih; branje po vrsticah skače sem in
+  // tja in polja si ne sledijo tako kot na papirju.
+  const NAJMANJSA_VRZEL_STOLPCA = 20; // pt prazne navpične proge med stolpcema
+  const NAJMANJ_POLJ_V_STOLPCU = 3;
+
+  /**
+   * Razdeli polja strani v stolpce. Stolpca sta dva, kadar čez vso višino
+   * strani teče prazna navpična proga, ki nobenega polja ne preseka.
+   * Vsakemu polju pripiše .stolpec (0, 1, ...) in vrne mejo stolpcev po
+   * straneh (Map stran -> x v točkah), da po istem rezu razvrstimo tudi
+   * naslove razdelkov.
+   */
+  function dolociStolpce(polja) {
+    const poStrani = new Map();
+    const meje = new Map();
+    polja.forEach((p) => {
+      if (!p.pravokotnik) return;
+      if (!poStrani.has(p.stran)) poStrani.set(p.stran, []);
+      poStrani.get(p.stran).push(p);
+    });
+
+    for (const [stran, naStrani] of poStrani) {
+      naStrani.forEach((p) => (p.stolpec = 0));
+      const odseki = naStrani
+        .map((p) => [p.pravokotnik.x, p.pravokotnik.x + p.pravokotnik.width])
+        .sort((a, b) => a[0] - b[0]);
+
+      // Poiščemo najširšo vrzel med vodoravnimi obsegi polj.
+      let konec = odseki[0][1];
+      let najvecja = 0;
+      let meja = null;
+      for (const [od, do_] of odseki) {
+        if (od - konec > najvecja) {
+          najvecja = od - konec;
+          meja = konec + (od - konec) / 2;
+        }
+        konec = Math.max(konec, do_);
+      }
+      if (najvecja < NAJMANJSA_VRZEL_STOLPCA) continue;
+
+      const levo = naStrani.filter((p) => p.pravokotnik.x < meja);
+      const desno = naStrani.filter((p) => p.pravokotnik.x >= meja);
+      if (levo.length < NAJMANJ_POLJ_V_STOLPCU || desno.length < NAJMANJ_POLJ_V_STOLPCU) {
+        continue;
+      }
+      desno.forEach((p) => (p.stolpec = 1));
+      meje.set(stran, meja);
+    }
+    return meje;
+  }
+
   /** Ali je ime polja neuporabno ("Checkbox7") in naj raje vzamemo besedilo? */
   function imeJeNeuporabno(ime) {
-    return /^(check ?box|text ?field|polje|field)\s*\d*$/i.test(ime);
+    // "4", "5", "6" so v prilogah imena okenc - povedo prav toliko kot
+    // "Checkbox7".
+    return (
+      /^(check ?box|text ?field|polje|field)\s*\d*$/i.test(ime) ||
+      /^\d+$/.test(String(ime || "").trim())
+    );
   }
 
   return {
@@ -928,6 +1176,8 @@
     zdruziVVrstice,
     zdruziVIzbire,
     najdiRazdelke,
+    najdiPodrazdelke,
+    dolociStolpce,
     popraviZnake,
     izberiOznako,
     pocistiNapis,
