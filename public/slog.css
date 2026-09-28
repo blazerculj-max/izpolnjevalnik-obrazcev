@@ -543,6 +543,30 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
   border: 1px solid var(--opozorilo-rob);
   border-radius: 8px;
 }
+/* Zavihki po straneh v plošči s podpisi. Obrazec ima lahko podpise na več
+   straneh; zavihek izbere stran in z njo tudi stran v predogledu spodaj. */
+.zavihki-podpisov {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--meja); padding-bottom: 8px;
+}
+.zavihek-podpisov {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--pridusen); background: var(--ozadje);
+  border: 1px solid var(--meja); border-radius: 999px; cursor: pointer;
+}
+.zavihek-podpisov:hover { border-color: var(--modra-rob); }
+.zavihek-podpisov.izbran {
+  color: #fff; background: var(--modra); border-color: var(--modra);
+}
+.zavihek-stevec {
+  font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  background: var(--meja); color: var(--pridusen);
+}
+.zavihek-podpisov.izbran .zavihek-stevec { background: rgba(255,255,255,.22); color: #fff; }
+.zavihek-stevec.polno { background: var(--zelena); color: #fff; }
+.zavihek-podpisov.izbran .zavihek-stevec.polno { background: #fff; color: var(--zelena); }
+
 .velikost-oznaka { margin-top: 8px; font-weight: 500; }
 .drsnik-velikosti { width: 100%; margin: 2px 0 4px; accent-color: var(--modra); }
 

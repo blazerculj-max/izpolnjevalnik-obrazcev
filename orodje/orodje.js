@@ -26,6 +26,7 @@
   let pdfjsDoc = null; // odprt dokument v pdfjs (za izris strani)
   let odprtObrazec = null; // { ime, shema }
   let podpisniPasovi = []; // [{ id, naziv, slika, stran, x, y, sirina, sifra }]
+  let izbranaStranPodpisov = 1; // katero stran kažeta zavihek in predogled
   let idPodpisaVZajemu = null;
   let odgovoriVrstic = {}; // { idVrstice: "DA" | "NE" }
   let odgovoriIzbir = {}; // { idIzbire: vklopna vrednost okenca }
@@ -428,13 +429,8 @@
           <p class="namig" style="margin:0 0 8px">
             Podpis zajemi, nato ga povleci na pravo mesto na strani.
           </p>
+          <div id="zavihki-podpisov" class="zavihki-podpisov"></div>
           <div id="seznam-podpisov"></div>
-          <label class="oznaka-polja" style="margin-top:12px">Stran za postavitev</label>
-          <select id="stran-podpisa">
-            ${shema.strani
-              .map((s) => `<option value="${s.stran}">Stran ${s.stran}</option>`)
-              .join("")}
-          </select>
           <div class="podpis-mesto" id="podpis-mesto"></div>
         </aside>
       </div>
@@ -477,15 +473,10 @@
       })
     );
 
-    const izbiraStrani = document.getElementById("stran-podpisa");
-    const privzetaStran = podpisniPasovi[0]?.stran || 1;
-    izbiraStrani.value = String(privzetaStran);
-    izbiraStrani.addEventListener("change", () =>
-      izrisiMestoPodpisa(Number(izbiraStrani.value))
-    );
-
+    izbranaStranPodpisov = podpisniPasovi[0]?.stran || 1;
+    izrisiZavihkePodpisov();
     izrisiSeznamPodpisov();
-    izrisiMestoPodpisa(privzetaStran);
+    izrisiMestoPodpisa(izbranaStranPodpisov);
   }
 
   /**
@@ -609,16 +600,55 @@
       </div>${pojasnilo}${pripomba}</div>`;
   }
 
+  /**
+   * Zavihki po straneh. Obrazec ima lahko podpise na več straneh (Zahtevek
+   * na treh), zato jih ne zlagamo v en dolg seznam: zavihek izbere stran,
+   * ta pa hkrati določi, katero stran kaže predogled pod njim.
+   */
+  function izrisiZavihkePodpisov() {
+    const ovoj = document.getElementById("zavihki-podpisov");
+    if (!ovoj) return;
+    const strani = [...new Set(podpisniPasovi.map((p) => p.stran))].sort(
+      (a, b) => a - b
+    );
+    // Pri enem samem zavihku ni kaj izbirati.
+    if (strani.length < 2) {
+      ovoj.innerHTML = "";
+      return;
+    }
+    ovoj.innerHTML = strani
+      .map((st) => {
+        const na = podpisniPasovi.filter((p) => p.stran === st);
+        const zajetih = na.filter((p) => p.slika).length;
+        return `<button type="button" class="zavihek-podpisov${
+          st === izbranaStranPodpisov ? " izbran" : ""
+        }" data-stran-podpisov="${st}">Str. ${st}
+          <span class="zavihek-stevec${zajetih ? " polno" : ""}"
+            >${zajetih}/${na.length}</span></button>`;
+      })
+      .join("");
+    ovoj.querySelectorAll("[data-stran-podpisov]").forEach((b) =>
+      b.addEventListener("click", () => {
+        izbranaStranPodpisov = Number(b.dataset.stranPodpisov);
+        izrisiZavihkePodpisov();
+        izrisiSeznamPodpisov();
+        izrisiMestoPodpisa(izbranaStranPodpisov);
+      })
+    );
+  }
+
   /** Seznam podpisnih mest s predogledom in gumbom za zajem. */
   function izrisiSeznamPodpisov() {
     const ovoj = document.getElementById("seznam-podpisov");
     if (!ovoj) return;
-    ovoj.innerHTML = podpisniPasovi
+    const naStrani = podpisniPasovi.filter(
+      (p) => p.stran === izbranaStranPodpisov
+    );
+    ovoj.innerHTML = naStrani
       .map(
         (p) => `<div class="podpis-pas" data-id="${p.id}">
           <div class="podpis-pas-glava">
             <strong>${escapeHtml(p.naziv)}</strong>
-            <span class="namig">str. ${p.stran}</span>
           </div>
           <div class="podpis-predogled" data-predogled="${p.id}">
             ${p.slika ? `<img src="${p.slika}" alt="Podpis" />` : "Še ni podpisa"}
@@ -652,9 +682,10 @@
                 : ""
             }
             ${
-              p.slika && podpisniPasovi.some((d) => d !== p && !d.slika)
+              p.slika && naStrani.some((d) => d !== p && !d.slika)
                 ? `<button type="button" class="gumb-tih majhen" data-kopiraj="${p.id}"
-                     title="Isti podpis prenese na vsa še prazna mesta">Kopiraj v ostala</button>`
+                     title="Isti podpis prenese na še prazna mesta na tej strani"
+                     >Kopiraj v ostala na strani</button>`
                 : ""
             }
           </div>
@@ -668,6 +699,7 @@
     ovoj.querySelectorAll("[data-odstrani]").forEach((b) =>
       b.addEventListener("click", () => {
         najdiPas(b.dataset.odstrani).slika = null;
+        izrisiZavihkePodpisov();
         izrisiSeznamPodpisov();
         izrisiZnakePodpisov();
       })
@@ -684,13 +716,16 @@
       })
     );
     // Kadar je zavarovalec hkrati zavarovanec ali plačnik, se podpisuje
-    // enkrat - isti podpis prenesemo na vsa še prazna mesta.
+    // enkrat - isti podpis prenesemo na še prazna mesta. Samo na TEJ strani:
+    // na drugi strani se praviloma podpisuje kdo drug in tuj podpis v njegovo
+    // okence ne sodi.
     ovoj.querySelectorAll("[data-kopiraj]").forEach((b) =>
       b.addEventListener("click", () => {
         const vir = najdiPas(b.dataset.kopiraj);
         podpisniPasovi.forEach((p) => {
-          if (p !== vir && !p.slika) p.slika = vir.slika;
+          if (p !== vir && !p.slika && p.stran === vir.stran) p.slika = vir.slika;
         });
+        izrisiZavihkePodpisov();
         izrisiSeznamPodpisov();
         izrisiZnakePodpisov();
       })
@@ -825,6 +860,7 @@
     if (izhod) izhod.innerHTML = "";
     const stanje = document.getElementById("stanje-obrazca");
     if (stanje) stanje.textContent = "Počiščeno.";
+    izrisiZavihkePodpisov();
     izrisiSeznamPodpisov();
     izrisiZnakePodpisov();
   }
@@ -1245,6 +1281,7 @@
     if (jePodpisan && idPodpisaVZajemu) {
       const pas = najdiPas(idPodpisaVZajemu);
       if (pas) pas.slika = obrezanoPlatno();
+      izrisiZavihkePodpisov();
       izrisiSeznamPodpisov();
       izrisiZnakePodpisov();
     }
