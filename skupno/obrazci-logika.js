@@ -76,23 +76,86 @@
             besedilo: k.besedilo,
             pisava: k.pisava,
             visina: k.visina,
+            kosi: [k],
           };
         } else {
           const locilo = k.x - tekoci.do >= VRZEL_PRESLEDKA ? " " : "";
           tekoci.besedilo += locilo + k.besedilo;
           tekoci.do = k.x + k.w;
+          tekoci.kosi.push(k);
         }
       }
       if (tekoci) odseki.push(tekoci);
     }
-    return odseki.map((o) => ({
-      y: o.y,
-      od: o.od,
-      do: o.do,
-      pisava: o.pisava,
-      visina: o.visina,
-      besedilo: o.besedilo.replace(/\s+/g, " ").trim(),
-    }));
+    return odseki.map((o) => sestaviOdsek(o.kosi));
+  }
+
+  /** Iz koščkov ene vrstice sestavi odsek (besedilo in obseg). */
+  function sestaviOdsek(kosi) {
+    let besedilo = kosi[0].besedilo;
+    let konec = kosi[0].x + kosi[0].w;
+    for (let i = 1; i < kosi.length; i++) {
+      const locilo = kosi[i].x - konec >= VRZEL_PRESLEDKA ? " " : "";
+      besedilo += locilo + kosi[i].besedilo;
+      konec = kosi[i].x + kosi[i].w;
+    }
+    return {
+      y: kosi[0].y,
+      od: kosi[0].x,
+      do: konec,
+      pisava: kosi[0].pisava,
+      visina: kosi[0].visina,
+      kosi,
+      besedilo: besedilo.replace(/\s+/g, " ").trim(),
+    };
+  }
+
+  /**
+   * Odseke prereže tam, kjer se začne vnosno polje. Brez tega se napis ene
+   * celice zlepi z napisom sosednje - pri Zahtevku "za nadomestilo za" in
+   * "zavarovalna vsota" stojita 4,4 pt narazen in postaneta en napis, zato
+   * okence dobi tuj privesek, polje ob njem pa ostane brez imena.
+   */
+  function razreziNaPoljih(odseki, polja, celice) {
+    const okvirji = polja
+      .filter((p) => p.pravokotnik)
+      .map((p) => p.pravokotnik);
+    // Celice, ki jih obrazec nariše, povedo, kje se ena rubrika konča in
+    // druga začne. Predolge in prekratke poti niso celice.
+    const robovi = (celice || []).filter(
+      (r) => r.sirina > 40 && r.sirina < 560 && r.visina > 8 && r.visina < 200
+    );
+    const izhod = [];
+    for (const o of odseki) {
+      const meje = [
+        ...okvirji
+          .filter(
+            (r) => o.y >= r.y - 2 && o.y <= r.y + r.height + 2
+          )
+          .map((r) => r.x),
+        ...robovi
+          .filter((r) => o.y >= r.y && o.y <= r.y + r.visina)
+          .flatMap((r) => [r.x, r.x + r.sirina]),
+      ]
+        .filter((x) => x > o.od + 1 && x < o.do - 1)
+        .sort((a, b) => a - b);
+      if (!meje.length || !o.kosi || o.kosi.length < 2) {
+        izhod.push(o);
+        continue;
+      }
+      let del = [];
+      let i = 0;
+      for (const k of o.kosi) {
+        while (i < meje.length && k.x >= meje[i]) {
+          if (del.length) izhod.push(sestaviOdsek(del));
+          del = [];
+          i++;
+        }
+        del.push(k);
+      }
+      if (del.length) izhod.push(sestaviOdsek(del));
+    }
+    return izhod;
   }
 
   /** Glava stolpca nad poljem (npr. "DA" ali "NE"). */
@@ -199,6 +262,20 @@
 
     const oceni = (o, vrzel) => vrzel + TEZA_NAVPICNO * Math.abs(o.y - cy);
 
+    // Napis, ki se prekriva z drugim poljem, je njegov, ne naš: pojasnilo
+    // "kzz št. (obvezen podatek ...)" leži nad poljem KZZ, a se začne tik za
+    // poljem Datum.
+    const jeTujNapis = (o) =>
+      vsaPolja.some(
+        (d) =>
+          d !== polje &&
+          d.stran === polje.stran &&
+          d.pravokotnik &&
+          Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 10 &&
+          d.pravokotnik.x < o.do &&
+          d.pravokotnik.x + d.pravokotnik.width > o.od
+      );
+
     const izberi = (kandidati, vrzelDo, utez) => {
       if (!kandidati.length) return null;
       const sidro = kandidati.reduce((a, b) =>
@@ -261,19 +338,6 @@
       )
       .reduce((n, d) => Math.min(n, d.pravokotnik.x), Infinity);
 
-    // Napis, ki se prekriva z drugim poljem, je njegov, ne naš: pojasnilo
-    // "kzz št. (obvezen podatek ...)" leži nad poljem KZZ, a se začne tik za
-    // poljem Datum.
-    const jeTujNapis = (o) =>
-      vsaPolja.some(
-        (d) =>
-          d !== polje &&
-          d.stran === polje.stran &&
-          d.pravokotnik &&
-          Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 10 &&
-          d.pravokotnik.x < o.do &&
-          d.pravokotnik.x + d.pravokotnik.width > o.od
-      );
 
     const desno = izberi(
       vPasu.filter(
@@ -344,8 +408,15 @@
       const stran = strani[polje.stran - 1];
       if (!stran || !polje.pravokotnik) continue;
       const r = polje.pravokotnik;
-      const odseki = stran.odseki || razdeliNaOdseke(stran.kosi);
-      stran.odseki = odseki;
+      if (!stran.odsekiPoPoljih) {
+        stran.odseki = stran.odseki || razdeliNaOdseke(stran.kosi);
+        stran.odsekiPoPoljih = razreziNaPoljih(
+          stran.odseki,
+          polja.filter((p) => p.stran === polje.stran),
+          stran.okvirji
+        );
+      }
+      const odseki = stran.odsekiPoPoljih;
       oznake.set(polje.ime, {
         oznaka: najdiOznakoVrstice(
           odseki,
@@ -901,7 +972,10 @@
 
     // Štejemo samo besede; ločila ("/", "—") niso beseda.
     const besede = napis.split(/\s+/).filter((b) => /[a-zčšž0-9]/i.test(b));
-    if (besede.length > 5) return false;
+    // Naštevanje je kratko, a ima veliko besed ("upravičenec za inv, dno,
+    // nbd, zio, rento" jih ima sedem v 39 znakih); poved je daljša.
+    const meja = napis.length <= 45 && napis.includes(",") ? 8 : 5;
+    if (besede.length > meja) return false;
     // "S I 5 6" je razsut natis predpone IBAN, ne napis polja.
     if (besede.filter((b) => b.length === 1).length > besede.length / 2) return false;
     const odprtih = (napis.match(/\(/g) || []).length;
