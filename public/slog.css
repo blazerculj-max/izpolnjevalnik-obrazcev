@@ -398,6 +398,22 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
 .podpis-pas-glava .namig { margin: 0; }
 .podpis-pas-gumbi { display: flex; gap: 6px; margin-top: 7px; }
 .gumb-tih.majhen { padding: 5px 10px; font-size: 12.5px; border-radius: 7px; }
+.gumb-glavni.majhen { padding: 5px 12px; font-size: 12.5px; border-radius: 7px; }
+
+/* Obvestilo, da je v ozadju pripravljena nova različica. Osvežitve ne
+   sprožimo sami: pobrisala bi vpisane podatke sredi dela. */
+.obvestilo-posodobitve {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 60; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 14px; font-size: 13px; line-height: 1.4;
+  color: var(--tekst); background: var(--ploskev);
+  border: 1px solid var(--meja); border-radius: 12px; box-shadow: var(--senca);
+}
+@media (max-width: 520px) {
+  .obvestilo-posodobitve { justify-content: center; text-align: center; }
+}
 .sifra-vnos { margin-top: 7px; font-size: 13px; padding: 7px 9px; }
 .podpis-predogled {
   background: #fff; border: 1px dashed var(--meja); border-radius: 8px;

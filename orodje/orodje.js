@@ -193,9 +193,68 @@
   // registrirati in tam tudi ni potreben - vse je že v datoteki.
   if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js").catch(() => {
-        /* brez njega orodje deluje, le brez povezave se ne zažene */
+      navigator.serviceWorker
+        .register("sw.js")
+        .then(spremljajPosodobitve)
+        .catch(() => {
+          /* brez njega orodje deluje, le brez povezave se ne zažene */
+        });
+    });
+  }
+
+  /**
+   * Nova različica se prenese v ozadju, odprta stran pa ostane stara -
+   * takšna je cena tega, da se orodje odpre tudi brez povezave. Da
+   * uporabnik ne ugiba, ali ima najnovejšo, mu to povemo in osvežitev
+   * prepustimo njemu: osvežitev pobriše vpisane podatke, zato je ne smemo
+   * sprožiti sami sredi dela.
+   */
+  function spremljajPosodobitve(registracija) {
+    if (!registracija) return;
+    let jeImelKrmilnika = !!navigator.serviceWorker.controller;
+    const obvesti = () => {
+      if (jeImelKrmilnika) pokaziObvestiloOPosodobitvi();
+      jeImelKrmilnika = true;
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", obvesti);
+    registracija.addEventListener("updatefound", () => {
+      const nova = registracija.installing;
+      if (!nova) return;
+      nova.addEventListener("statechange", () => {
+        if (nova.state === "installed" && navigator.serviceWorker.controller) {
+          obvesti();
+        }
       });
+    });
+  }
+
+  /** Ali je v obrazcu že kaj vpisanega? Osvežitev bi to pobrisala. */
+  function jeKajVpisanega() {
+    const vnosi = [...document.querySelectorAll("#obrazec-polja input, #obrazec-polja textarea")];
+    if (vnosi.some((e) => (e.type === "checkbox" ? e.checked : e.value.trim()))) return true;
+    if (podpisniPasovi.some((p) => p.slika || p.ime || p.sifra)) return true;
+    return Object.values(odgovoriVrstic).some(Boolean) ||
+      Object.values(odgovoriIzbir).some(Boolean);
+  }
+
+  function pokaziObvestiloOPosodobitvi() {
+    if (document.getElementById("obvestilo-posodobitve")) return;
+    const el = document.createElement("div");
+    el.id = "obvestilo-posodobitve";
+    el.className = "obvestilo-posodobitve";
+    const svari = jeKajVpisanega();
+    el.innerHTML = `<span>Na voljo je nova različica orodja.${
+      svari ? " Ob osvežitvi se vpisani podatki izgubijo." : ""
+    }</span>
+      <button type="button" class="gumb-glavni majhen" id="osvezi-orodje">Osveži</button>
+      <button type="button" class="gumb-tih majhen" id="zapri-obvestilo"
+        aria-label="Zapri">Pozneje</button>`;
+    document.body.appendChild(el);
+    document.getElementById("osvezi-orodje").addEventListener("click", () => {
+      location.reload();
+    });
+    document.getElementById("zapri-obvestilo").addEventListener("click", () => {
+      el.remove();
     });
   }
 
