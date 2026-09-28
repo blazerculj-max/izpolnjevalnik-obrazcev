@@ -1442,6 +1442,38 @@
   // tja in polja si ne sledijo tako kot na papirju.
   const NAJMANJSA_VRZEL_STOLPCA = 20; // pt prazne navpične proge med stolpcema
   const NAJMANJ_POLJ_V_STOLPCU = 3;
+  // Meja med stolpcema je blizu sredine; dlje je proga znotraj stolpca.
+  const NAJVEC_ODMIK_SREDINE = 0.08;
+  const DOPUST_ZRCALJENJA = 4; // pt
+  const NAJMANJ_ZRCALNIH = 0.6; // delež vrstic, ki morajo biti zrcalne
+
+  // Med dvema blokoma obrazca teče prazna vodoravna proga; pod to mero gre
+  // za razmik med vrsticami istega bloka.
+  const NAJMANJSA_VRZEL_PASU = 2.8; // % višine strani
+
+  /**
+   * Polja razreže na pasove - vodoravne trakove, med katerimi ni nobenega
+   * polja. Vsakemu polju pripiše .pas (0, 1, ...) znotraj njegove skupine.
+   */
+  function dolociPasove(polja, kljucSkupine) {
+    const skupine = new Map();
+    polja.forEach((p) => {
+      if (!p.polozaj) return;
+      const k = kljucSkupine(p);
+      if (!skupine.has(k)) skupine.set(k, []);
+      skupine.get(k).push(p);
+    });
+    for (const skupina of skupine.values()) {
+      skupina.sort((a, b) => a.polozaj.y - b.polozaj.y);
+      let pas = 0;
+      let dno = -Infinity;
+      skupina.forEach((p) => {
+        if (p.polozaj.y - dno > NAJMANJSA_VRZEL_PASU) pas++;
+        p.pas = pas;
+        dno = Math.max(dno, p.polozaj.y + (p.polozaj.visina || 0));
+      });
+    }
+  }
 
   /**
    * Razdeli polja strani v stolpce. Stolpca sta dva, kadar čez vso višino
@@ -1450,40 +1482,100 @@
    * straneh (Map stran -> x v točkah), da po istem rezu razvrstimo tudi
    * naslove razdelkov.
    */
-  function dolociStolpce(polja) {
+  /**
+   * Sta polovici zrcalni? Pri dveh stolpcih (prva / druga zavarovana oseba)
+   * stoji vsako polje desne polovice natanko toliko desno od svojega para
+   * kot je široka polovica. Pri TABELI to ne drži: tam vrstica teče čez obe
+   * polovici in so stolpci tabele različno široki.
+   */
+  function polovicaZrcali(levo, desno) {
+    const x = (p) => p.pravokotnik.x;
+    const zamik = Math.min(...desno.map(x)) - Math.min(...levo.map(x));
+    const vrstice = new Map();
+    levo.forEach((p) => {
+      const k = Math.round((p.pravokotnik.y || 0) / 3);
+      if (!vrstice.has(k)) vrstice.set(k, { l: [], d: [] });
+      vrstice.get(k).l.push(x(p));
+    });
+    desno.forEach((p) => {
+      const k = Math.round((p.pravokotnik.y || 0) / 3);
+      if (!vrstice.has(k)) vrstice.set(k, { l: [], d: [] });
+      vrstice.get(k).d.push(x(p));
+    });
+
+    let obojestranskih = 0;
+    let zrcalnih = 0;
+    for (const { l, d } of vrstice.values()) {
+      if (!l.length || !d.length) continue;
+      obojestranskih++;
+      const ujema = l.every((xl) =>
+        d.some((xd) => Math.abs(xd - (xl + zamik)) <= DOPUST_ZRCALJENJA)
+      );
+      if (ujema) zrcalnih++;
+    }
+    if (!obojestranskih) return true; // polovici se sploh ne srečata
+    return zrcalnih / obojestranskih >= NAJMANJ_ZRCALNIH;
+  }
+
+  function dolociStolpce(polja, kljucSkupine, lastnost, zahtevajZrcaljenje) {
     const poStrani = new Map();
     const meje = new Map();
+    const kljuc = kljucSkupine || ((p) => p.stran);
+    const ime = lastnost || "stolpec";
     polja.forEach((p) => {
       if (!p.pravokotnik) return;
-      if (!poStrani.has(p.stran)) poStrani.set(p.stran, []);
-      poStrani.get(p.stran).push(p);
+      const k = kljuc(p);
+      if (!poStrani.has(k)) poStrani.set(k, []);
+      poStrani.get(k).push(p);
     });
 
     for (const [stran, naStrani] of poStrani) {
-      naStrani.forEach((p) => (p.stolpec = 0));
+      naStrani.forEach((p) => (p[ime] = 0));
       const odseki = naStrani
         .map((p) => [p.pravokotnik.x, p.pravokotnik.x + p.pravokotnik.width])
         .sort((a, b) => a[0] - b[0]);
 
-      // Poiščemo najširšo vrzel med vodoravnimi obsegi polj.
+      // Vse prazne navpične proge, ki jih nobeno polje ne preseka.
       let konec = odseki[0][1];
-      let najvecja = 0;
-      let meja = null;
+      const kandidati = [];
       for (const [od, do_] of odseki) {
-        if (od - konec > najvecja) {
-          najvecja = od - konec;
-          meja = konec + (od - konec) / 2;
+        if (od - konec >= NAJMANJSA_VRZEL_STOLPCA) {
+          kandidati.push(konec + (od - konec) / 2);
         }
         konec = Math.max(konec, do_);
       }
-      if (najvecja < NAJMANJSA_VRZEL_STOLPCA) continue;
+      if (!kandidati.length) continue;
 
-      const levo = naStrani.filter((p) => p.pravokotnik.x < meja);
-      const desno = naStrani.filter((p) => p.pravokotnik.x >= meja);
-      if (levo.length < NAJMANJ_POLJ_V_STOLPCU || desno.length < NAJMANJ_POLJ_V_STOLPCU) {
-        continue;
+      // Dva stolpca sta dve POLOVICI: meja teče po sredini. Zato izmed prog
+      // vzamemo tisto, ki je sredini najbližja, ne najširše. Pri Zahtevku je
+      // med okencem "Druga zavarovana oseba" in njenimi polji 56 pt prazne
+      // proge, prava meja med stolpcema (24 pt) pa je na sredini; najširša
+      // proga bi desni stolpec prerezala na pol.
+      const levi = Math.min(...odseki.map((o) => o[0]));
+      const desni = Math.max(...odseki.map((o) => o[1]));
+      const sredina = (levi + desni) / 2;
+      const dopust = (desni - levi) * NAJVEC_ODMIK_SREDINE;
+
+      let meja = null;
+      let levo = null;
+      let desno = null;
+      let najblizje = Infinity;
+      for (const m of kandidati) {
+        const odmik = Math.abs(m - sredina);
+        if (odmik > dopust || odmik >= najblizje) continue;
+        const l = naStrani.filter((p) => p.pravokotnik.x < m);
+        const d = naStrani.filter((p) => p.pravokotnik.x >= m);
+        if (l.length < NAJMANJ_POLJ_V_STOLPCU || d.length < NAJMANJ_POLJ_V_STOLPCU) {
+          continue;
+        }
+        if (zahtevajZrcaljenje && !polovicaZrcali(l, d)) continue;
+        najblizje = odmik;
+        meja = m;
+        levo = l;
+        desno = d;
       }
-      desno.forEach((p) => (p.stolpec = 1));
+      if (meja === null) continue;
+      desno.forEach((p) => (p[ime] = 1));
       meje.set(stran, meja);
     }
     return meje;
@@ -1511,6 +1603,7 @@
     najdiRazdelke,
     najdiPodrazdelke,
     dolociStolpce,
+    dolociPasove,
     popraviZnake,
     izberiOznako,
     pocistiNapis,

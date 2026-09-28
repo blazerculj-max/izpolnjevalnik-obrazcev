@@ -143,15 +143,60 @@
       const strani = mereStrani(doc);
       const polja = preberiPolja(doc, strani);
 
+      const imaBesedilo = !!(straniBesedila && straniBesedila.length);
+      const razdelki = imaBesedilo
+        ? logika.najdiRazdelke(straniBesedila, strani)
+        : [];
+
+      // Naslov velja za polja POD njim; ob robu je poravnan na sredino svojega
+      // bloka, zato dopustimo nekaj odstotka strani nazaj navzgor.
+      const DOPUST = 2;
+      // Razdelek se ne konča s stranjo: tabela razdelka 10.b se pri Zahtevku
+      // nadaljuje na naslednjo stran in polja tam spadajo podenj, dokler se
+      // ne začne nov razdelek. Zato primerjamo mesto v dokumentu, ne le y.
+      const jePred = (r, stran, y) => r.stran < stran || (r.stran === stran && r.y <= y);
+      const razdelekNa = (stran, y) => {
+        let naj = -1;
+        razdelki.forEach((r, i) => {
+          if (jePred(r, stran, y)) naj = i;
+        });
+        return naj;
+      };
+      polja.forEach((p) => {
+        p.razdelek = razdelekNa(p.stran, (p.polozaj?.y ?? 0) + DOPUST);
+      });
+
       // Obrazec je lahko postavljen v dva stolpca; brati ga je treba po
       // stolpcih, sicer polja skačejo z leve na desno in nazaj. Stolpce
       // določimo pred oznakami, ker napis iz sosednjega stolpca ni naš.
       const meje = logika.dolociStolpce(polja);
 
+      // Kjer čez vso stran ni nobene prazne proge, jo poiščemo še znotraj
+      // vsakega razdelka posebej: pri Zahtevku sta v rubrikah 5 do 11 levi
+      // stolpec prva in desni druga zavarovana oseba, na isti strani pa
+      // stoji še tabela čez vso širino, ki vsako progo strani prekrije.
+      // To velja samo za VRSTNI RED; oznake polj se ravnajo po strani.
+      polja.forEach((p) => {
+        p.stolpecRazdelka = p.stolpec ?? 0;
+      });
+      // Razdelek je lahko mešan: rubrika 6 ima zgoraj dva bloka (prva in
+      // druga zavarovana oseba), spodaj pa tabelo čez vso širino. Zato
+      // razdelek najprej razrežemo na PASOVE - vodoravne trakove, med
+      // katerimi je prazna proga - in stolpce iščemo v vsakem posebej.
+      logika.dolociPasove(polja.filter((p) => !meje.has(p.stran)), (p) =>
+        p.stran + "|" + p.razdelek
+      );
+      logika.dolociStolpce(
+        polja.filter((p) => !meje.has(p.stran)),
+        (p) => p.stran + "|" + p.razdelek + "|" + p.pas,
+        "stolpecRazdelka",
+        true
+      );
+
       // Imena polj so pogosto neuporabna ("Checkbox1"), zato oznako preberemo
       // iz besedila, ki v PDF-ju stoji ob polju.
       let podpisi = [];
-      if (straniBesedila && straniBesedila.length) {
+      if (imaBesedilo) {
         const oznake = logika.oznaciPolja(straniBesedila, polja, meje);
         polja.forEach((p) => {
           const najdeno = oznake.get(p.ime);
@@ -188,10 +233,6 @@
         .zdruziVVrstice(polja)
         .filter((v) => !v.odgovori.some((o) => o.polja.some((n) => vIzbirah.has(n))));
 
-      const imaBesedilo = !!(straniBesedila && straniBesedila.length);
-      const razdelki = imaBesedilo
-        ? logika.najdiRazdelke(straniBesedila, strani)
-        : [];
       // Naslovi sklopov znotraj razdelka; tiste, ki so že razdelek, izpustimo.
       const podrazdelki = (
         imaBesedilo
@@ -202,13 +243,6 @@
           !razdelki.some((r) => r.stran === p.stran && Math.abs(r.y - p.y) < 1)
       );
 
-      // Naslov velja za polja POD njim; ob robu je poravnan na sredino svojega
-      // bloka, zato dopustimo nekaj odstotka strani nazaj navzgor.
-      const DOPUST = 2;
-      // Razdelek se ne konča s stranjo: tabela razdelka 10.b se pri Zahtevku
-      // nadaljuje na naslednjo stran in polja tam spadajo podenj, dokler se
-      // ne začne nov razdelek. Zato primerjamo mesto v dokumentu, ne le y.
-      const jePred = (r, stran, y) => r.stran < stran || (r.stran === stran && r.y <= y);
       const zadnjiNad = (seznam, p, dodatno) => {
         const y = (p.polozaj?.y ?? 0) + DOPUST;
         let naj = -1;
@@ -220,7 +254,6 @@
         return naj;
       };
       polja.forEach((p) => {
-        p.razdelek = zadnjiNad(razdelki, p);
         const sekcija = p.razdelek >= 0 ? razdelki[p.razdelek] : null;
         // Naslov sklopa velja za svoj stolpec in le znotraj svojega razdelka.
         p.podrazdelek = zadnjiNad(
@@ -239,7 +272,8 @@
         (a, b) =>
           a.stran - b.stran ||
           a.razdelek - b.razdelek ||
-          (a.stolpec ?? 0) - (b.stolpec ?? 0) ||
+          (a.pas ?? 0) - (b.pas ?? 0) ||
+          (a.stolpecRazdelka ?? 0) - (b.stolpecRazdelka ?? 0) ||
           a.podrazdelek - b.podrazdelek ||
           (a.polozaj?.y ?? 0) - (b.polozaj?.y ?? 0) ||
           (a.polozaj?.x ?? 0) - (b.polozaj?.x ?? 0)
