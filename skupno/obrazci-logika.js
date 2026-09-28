@@ -443,6 +443,8 @@
   // "ime in priimek ter podpis zakonitega zastopnika" meri 47 znakov, zato je
   // meja za odstavek nekoliko višja od najdaljšega znanega napisa.
   const NAJVEC_ZNAKOV_PODPISA = 60;
+  const VRZEL_VRSTICE_TABELE = 4; // pt - zaokroževanje y v vrstico tabele
+  const NAJMANJSA_SIRINA_PODPISA = 25; // pt - ožje od tega ni celica za podpis
 
   /**
    * Napis mesta za podpis je pogosto prelomljen ("ime in priimek, šifra in
@@ -461,7 +463,90 @@
     return pod || null;
   }
 
-  function najdiMestaPodpisov(strani, mereStrani) {
+  /**
+   * "Podpis" kot naslov stolpca v tabeli: podpisati se ne da v naslov, ampak
+   * v vsako vrstico posebej. Vrstice preberemo iz polj tabele - na Zahtevku
+   * ima stran 4 osem vrstic (štiri zavarovane osebe in njihovi zakoniti
+   * zastopniki), stran 5 prav tako. Celice tega stolpca obrazec ne nariše in
+   * zanje nima polj, zato jih sestavimo iz desnega roba vrstice in roba
+   * strani.
+   */
+  function podpisiVVrsticah(napis, stran, polja, mere) {
+    const naStrani = (polja || []).filter(
+      (p) => p.stran === stran.stran && p.pravokotnik
+    );
+    if (!naStrani.length) return [];
+    const odseki = stran.odseki || (stran.odseki = razdeliNaOdseke(stran.kosi));
+    const desniRob = Math.max(...odseki.map((o) => o.do));
+    if (!(desniRob > napis.do)) return [];
+
+    const vrstice = new Map();
+    naStrani.forEach((p) => {
+      const r = p.pravokotnik;
+      if (r.y + r.height > napis.y) return; // samo pod naslovom stolpca
+      if (r.x >= napis.od) return; // samo levo od stolpca s podpisi
+      const kljuc = Math.round(r.y / VRZEL_VRSTICE_TABELE);
+      const v = vrstice.get(kljuc) || { y: r.y, visina: r.height, desno: 0, polj: 0 };
+      v.y = Math.min(v.y, r.y);
+      v.visina = Math.max(v.visina, r.height);
+      v.desno = Math.max(v.desno, r.x + r.width);
+      v.polj++;
+      vrstice.set(kljuc, v);
+    });
+
+    const vse = [...vrstice.values()]
+      .filter((v) => v.polj >= 2)
+      .sort((a, b) => b.y - a.y);
+    if (!vse.length) return [];
+
+    // Tabela se konča, kjer vrstice nehajo teči druga za drugo.
+    const vTabeli = [vse[0]];
+    for (let i = 1; i < vse.length; i++) {
+      const prej = vTabeli[vTabeli.length - 1];
+      if (prej.y - (vse[i].y + vse[i].visina) > prej.visina) break;
+      vTabeli.push(vse[i]);
+    }
+
+    // Stolpec s podpisi ima v vseh vrsticah isti levi rob: tam, kjer se
+    // konča najdaljša vrstica. Vrstice zakonitega zastopnika imajo namreč
+    // manj polj in bi sicer vsaka dobila svoj, preširok okvir.
+    const od = Math.max(...vTabeli.map((v) => v.desno)) + 2;
+    if (desniRob - od < NAJMANJSA_SIRINA_PODPISA) return [];
+
+    return vTabeli
+      .map((v) => {
+        const sredina = (od + desniRob) / 2;
+        // Vrstico poimenuje napis na njenem skrajnem levem robu
+        // ("Zavarovana oseba", "Zakoniti zastopnik").
+        const oznaka = odseki
+          .filter((o) => o.y >= v.y && o.y <= v.y + v.visina && o.do < napis.od)
+          .sort((a, b) => a.od - b.od)[0];
+        return {
+          naziv: pocisti("Podpis" + (oznaka ? " — " + oznaka.besedilo : "")),
+          stran: stran.stran,
+          potrebujeSifro: false,
+          potrebujeIme: false,
+          zaProdajnika: false,
+          x: (sredina / mere.sirina) * 100,
+          y: ((mere.visina - (v.y + v.visina / 2)) / mere.visina) * 100,
+          okvir: {
+            x: (od / mere.sirina) * 100,
+            y: ((mere.visina - (v.y + v.visina)) / mere.visina) * 100,
+            sirina: ((desniRob - od) / mere.sirina) * 100,
+            visina: (v.visina / mere.visina) * 100,
+          },
+          sifra: null,
+          ime: null,
+          vrstice: null,
+          zImenom: null,
+          zImenomInSifro: null,
+          najvecSirina: ((desniRob - od) / mere.sirina) * 100,
+          najvecVisina: (v.visina / mere.visina) * 100,
+        };
+      });
+  }
+
+  function najdiMestaPodpisov(strani, mereStrani, polja) {
     const najdeni = [];
     strani.forEach((s) => {
       const mere = mereStrani[s.stran - 1];
@@ -475,6 +560,15 @@
         if (/\bs podpisom\b|podpisane|podpisani/i.test(t)) continue;
 
         const okvir = najdiOkvirNapisa(s.okvirji, o);
+        // Sam "Podpis" brez okvira je naslov stolpca tabele; mesta so v
+        // njenih vrsticah.
+        if (!okvir && /^podpis$/i.test(t.trim())) {
+          const vVrsticah = podpisiVVrsticah(o, s, polja, mere);
+          if (vVrsticah.length >= 2) {
+            najdeni.push(...vVrsticah);
+            continue;
+          }
+        }
         const nadaljevanje = nadaljevanjeNapisa(odseki, o);
         const naziv = popraviPomanjsaneVerzalke(
           pocisti(t + " " + (nadaljevanje ? nadaljevanje.besedilo : "")).replace(

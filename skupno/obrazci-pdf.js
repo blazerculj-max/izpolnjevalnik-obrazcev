@@ -214,7 +214,7 @@
             if (p.enota && p.oznaka === p.enota) p.oznaka = p.ime;
           }
         });
-        podpisi = logika.najdiMestaPodpisov(straniBesedila, strani);
+        podpisi = logika.najdiMestaPodpisov(straniBesedila, strani, polja);
         // Polja v okviru za podpis (ime, šifra, podpis) pokrije narisan
         // podpis; v spletnem obrazcu jih ne ponujamo.
         logika.oznaciPoljaVPodpisih(polja, podpisi);
