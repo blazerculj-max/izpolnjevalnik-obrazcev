@@ -40,6 +40,10 @@ Brez namestitve, brez prijave, brez strežnika, ki bi karkoli obdeloval.
 
 ## Zasebnost
 
+> Za pooblaščeno osebo za varstvo podatkov je vse to zbrano in **preverljivo**
+> v [ZASEBNOST.md](ZASEBNOST.md): kaj je bilo preizkušeno, s kakšnim izidom in
+> kako preizkus ponoviti.
+
 **Obrazec, ki ga izpolniš, se ne pošlje nikamor.** Stran je statična: PDF
 prebere, izpolni in shrani tvoj brskalnik. Ni strežnika, ki bi kaj videl, ni
 baze in ni beleženja.
