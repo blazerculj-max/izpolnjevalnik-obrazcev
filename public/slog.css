@@ -12,6 +12,7 @@
   --opozorilo-ozadje: #fff8e8;
   --opozorilo-rob: #f0dcaa;
   --zelena: #0f7a5a;
+  --rumena: #e0a800;
   --senca: 0 1px 2px rgba(16, 33, 51, .06), 0 4px 14px rgba(16, 33, 51, .05);
   --r: 12px;
 }
@@ -400,20 +401,22 @@ mark.aktiven { background: #ff9f43; color: #2b1a00; box-shadow: 0 0 0 2px #ffd6a
 .gumb-tih.majhen { padding: 5px 10px; font-size: 12.5px; border-radius: 7px; }
 .gumb-glavni.majhen { padding: 5px 12px; font-size: 12.5px; border-radius: 7px; }
 
-/* Obvestilo, da je v ozadju pripravljena nova različica. Osvežitve ne
-   sprožimo sami: pobrisala bi vpisane podatke sredi dela. */
-.obvestilo-posodobitve {
-  position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: max(16px, env(safe-area-inset-bottom));
-  z-index: 60; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  max-width: min(560px, calc(100vw - 32px));
-  padding: 10px 14px; font-size: 13px; line-height: 1.4;
-  color: var(--tekst); background: var(--ploskev);
-  border: 1px solid var(--meja); border-radius: 12px; box-shadow: var(--senca);
+/* Stanje različice v glavi: zelena lučka pomeni, da tečeš na najnovejši,
+   rumena, da je nova prenesena in čaka. Klik na zeleno znova preveri,
+   klik na rumeno prevzame novo. */
+.stanje-razlicice { display: inline-flex; align-items: center; gap: 8px; }
+.stanje-razlicice .lucka {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--zelena); box-shadow: 0 0 0 3px rgba(15, 122, 90, .2);
 }
-@media (max-width: 520px) {
-  .obvestilo-posodobitve { justify-content: center; text-align: center; }
+.stanje-razlicice.je-posodobitev .lucka {
+  background: var(--rumena); box-shadow: 0 0 0 3px rgba(224, 168, 0, .25);
 }
+.stanje-razlicice.preverja .lucka {
+  background: var(--pridusen); box-shadow: 0 0 0 3px rgba(91, 107, 124, .2);
+}
+.stanje-razlicice.je-posodobitev { border-color: var(--rumena); }
+
 .sifra-vnos { margin-top: 7px; font-size: 13px; padding: 7px 9px; }
 .podpis-predogled {
   background: #fff; border: 1px dashed var(--meja); border-radius: 8px;

@@ -237,25 +237,62 @@
       Object.values(odgovoriIzbir).some(Boolean);
   }
 
+  // --- stanje različice v glavi ---------------------------------------
+  // Zelena lučka: tečeš na najnovejši. Rumena: nova je prenesena in čaka.
+  let jeNovaRazlicica = false;
+
+  function nastaviStanjeRazlicice(besedilo, razred) {
+    const gumb = document.getElementById("stanje-razlicice");
+    const napis = document.getElementById("stanje-razlicice-besedilo");
+    if (!gumb || !napis) return;
+    napis.textContent = besedilo;
+    gumb.classList.toggle("je-posodobitev", razred === "je-posodobitev");
+    gumb.classList.toggle("preverja", razred === "preverja");
+  }
+
   function pokaziObvestiloOPosodobitvi() {
-    if (document.getElementById("obvestilo-posodobitve")) return;
-    const el = document.createElement("div");
-    el.id = "obvestilo-posodobitve";
-    el.className = "obvestilo-posodobitve";
-    const svari = jeKajVpisanega();
-    el.innerHTML = `<span>Na voljo je nova različica orodja.${
-      svari ? " Ob osvežitvi se vpisani podatki izgubijo." : ""
-    }</span>
-      <button type="button" class="gumb-glavni majhen" id="osvezi-orodje">Osveži</button>
-      <button type="button" class="gumb-tih majhen" id="zapri-obvestilo"
-        aria-label="Zapri">Pozneje</button>`;
-    document.body.appendChild(el);
-    document.getElementById("osvezi-orodje").addEventListener("click", () => {
+    jeNovaRazlicica = true;
+    nastaviStanjeRazlicice("Novejša različica je na voljo", "je-posodobitev");
+  }
+
+  /** Klik na lučko: rumena prevzame novo, zelena znova preveri. */
+  async function obKlikuNaStanje() {
+    if (jeNovaRazlicica) {
+      if (
+        jeKajVpisanega() &&
+        !confirm(
+          "Ob posodobitvi se vpisani podatki izgubijo. Naj orodje posodobim?"
+        )
+      ) {
+        return;
+      }
       location.reload();
-    });
-    document.getElementById("zapri-obvestilo").addEventListener("click", () => {
-      el.remove();
-    });
+      return;
+    }
+    nastaviStanjeRazlicice("Preverjam …", "preverja");
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+      // Če je bila najdena nova, je pokaziObvestiloOPosodobitvi() že
+      // prestavil lučko na rumeno; sicer povemo, da novosti ni.
+      if (!jeNovaRazlicica) {
+        nastaviStanjeRazlicice("Ni novosti", null);
+        setTimeout(() => {
+          if (!jeNovaRazlicica) nastaviStanjeRazlicice("Najnovejša različica", null);
+        }, 2500);
+      }
+    } catch {
+      nastaviStanjeRazlicice("Brez povezave", null);
+      setTimeout(() => {
+        if (!jeNovaRazlicica) nastaviStanjeRazlicice("Najnovejša različica", null);
+      }, 2500);
+    }
+  }
+
+  const stanjeEl = document.getElementById("stanje-razlicice");
+  if (stanjeEl && "serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+    stanjeEl.classList.remove("skrit");
+    stanjeEl.addEventListener("click", obKlikuNaStanje);
   }
 
   // Kopija za delo brez povezave ima smisel le, kadar orodje stoji na spletu.

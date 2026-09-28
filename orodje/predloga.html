@@ -63,6 +63,14 @@
           </div>
         </div>
         <div class="glava-gumbi">
+          <!-- Stanje različice. Zelena lučka: tečeš na najnovejši. Rumena:
+               nova je prenesena in čaka, da jo prevzameš. Vidno samo na
+               spletni različici - prenesena datoteka se ne posodablja. -->
+          <button class="gumb-tih svetel stanje-razlicice skrit" id="stanje-razlicice"
+                  type="button" title="Preveri, ali je na voljo novejša različica">
+            <span class="lucka" aria-hidden="true"></span>
+            <span id="stanje-razlicice-besedilo">Najnovejša različica</span>
+          </button>
           <!-- Vidno samo na spletni različici: kopija za delo brez povezave. -->
           <a class="gumb-tih svetel skrit" id="prenesi-orodje" href="index.html"
              download="Izpolnjevalnik-obrazcev.html">Prenesi za brez povezave</a>
