@@ -140,6 +140,7 @@
      * @param {Array} straniBesedila - [{stran, kosi:[{besedilo,x,y,w}]}] iz pdfjs
      */
     function shemaIzDokumenta(doc, straniBesedila) {
+      const VRZEL_VRSTICE = 0.9; // % višine strani - toliko še velja za isto vrstico
       const strani = mereStrani(doc);
       const polja = preberiPolja(doc, strani);
 
@@ -278,13 +279,120 @@
           (a.polozaj?.y ?? 0) - (b.polozaj?.y ?? 0) ||
           (a.polozaj?.x ?? 0) - (b.polozaj?.x ?? 0)
       );
+      // Polja, ki na papirju stojijo v isti vrstici, imajo lahko y različen
+      // za stotinko odstotka; brez zaokroževanja bi "premija" (y 50,174)
+      // prehitela "zavarovalno vsoto" (y 50,233), ki stoji levo od nje.
+      // Vrstico zapišemo, da po njej riše tudi vmesnik.
+      let skupina = null;
+      let vrstica = -1;
+      let vrhVrstice = -Infinity;
+      polja.forEach((p) => {
+        const k =
+          p.stran + "|" + p.razdelek + "|" + (p.pas ?? 0) + "|" + (p.stolpecRazdelka ?? 0);
+        const y = p.polozaj?.y ?? 0;
+        if (k !== skupina || y - vrhVrstice > VRZEL_VRSTICE) {
+          skupina = k;
+          vrstica++;
+          vrhVrstice = y;
+        }
+        p.vrstica = vrstica;
+      });
+      // Okence, ki na papirju stoji ob VEČ vrsticah hkrati ("mesečna
+      // nezgodna renta za invalidnost" ob vrsticah za 30 % in 50 %), pade
+      // med nji. Tako okence je samo v svoji vrstici, stoji ob levem robu
+      // stolpca, vrstica nad njim pa je zamaknjena desno - takrat ga
+      // postavimo na čelo te vrstice, ker jo uvaja.
+      const poVrsticah = new Map();
+      polja.forEach((p) => {
+        if (!poVrsticah.has(p.vrstica)) poVrsticah.set(p.vrstica, []);
+        poVrsticah.get(p.vrstica).push(p);
+      });
+      const levoV = (v) => Math.min(...(poVrsticah.get(v) || []).map((p) => p.polozaj?.x ?? 0));
+      polja.forEach((p) => {
+        const sama = poVrsticah.get(p.vrstica);
+        if (sama.length !== 1 || p.tip !== "CheckBox") return;
+        const prej = poVrsticah.get(p.vrstica - 1);
+        if (!prej || !prej.length) return;
+        if (prej[0].stran !== p.stran || prej[0].razdelek !== p.razdelek) return;
+        if ((p.polozaj?.x ?? 0) >= levoV(p.vrstica - 1)) return;
+        p.vrstica -= 1;
+        p.uvajaVrstico = true;
+      });
+      polja.sort(
+        (a, b) =>
+          a.vrstica - b.vrstica ||
+          (b.uvajaVrstico ? 1 : 0) - (a.uvajaVrstico ? 1 : 0) ||
+          (a.polozaj?.x ?? 0) - (b.polozaj?.x ?? 0)
+      );
       polja.forEach((p, i) => {
         p.zaporedje = i;
       });
 
+      // Kadar ima izbira možnosti razporejene ena pod drugo in ima vsaka
+      // svojo vrstico ENAKIH polj ("renta / doba izplačevanja / premija"
+      // pri 30 % in pri 50 %), se vrstici ne dasta razločiti. Prvemu polju
+      // vsake vrstice zato pripišemo možnost, ki ji pripada.
+      const vrsticePolj = new Map();
+      polja.forEach((p) => {
+        if (!vrsticePolj.has(p.vrstica)) vrsticePolj.set(p.vrstica, []);
+        vrsticePolj.get(p.vrstica).push(p);
+      });
+      const poImenu = new Map(polja.map((p) => [p.ime, p]));
+      // Vrstico opišejo njena VNOSNA polja; okenca so oznake, ne vsebina.
+      const vnosniVVrstici = (v, izbira) =>
+        (vrsticePolj.get(v) || []).filter(
+          (p) => p.tip === "TextField" && !izbira.polja.includes(p.ime)
+        );
+      izbire.forEach((i) => {
+        if (!i.moznosti || i.moznosti.length < 2) return;
+        // Vrstico iščemo le v STOLPCU izbire: enaki vrstici prve in druge
+        // zavarovane osebe stojita na isti višini in bi se zamenjali.
+        const svoje = poImenu.get(i.polja[0]);
+        if (!svoje) return;
+        const vrstice = i.moznosti.map((m) => {
+          if (!m.polozaj) return null;
+          let naj = null;
+          polja.forEach((p) => {
+            if (!p.polozaj || i.polja.includes(p.ime)) return;
+            if (
+              p.stran !== svoje.stran ||
+              p.razdelek !== svoje.razdelek ||
+              (p.pas ?? 0) !== (svoje.pas ?? 0) ||
+              (p.stolpecRazdelka ?? 0) !== (svoje.stolpecRazdelka ?? 0)
+            ) {
+              return;
+            }
+            const d = Math.abs(p.polozaj.y - m.polozaj.y);
+            if (d > VRZEL_VRSTICE) return;
+            if (!naj || d < naj.d) naj = { d, vrstica: p.vrstica };
+          });
+          return naj ? naj.vrstica : null;
+        });
+        const podpisi = vrstice.map((v) =>
+          v === null
+            ? ""
+            : vnosniVVrstici(v, i)
+                .map((p) => p.oznaka)
+                .join("|")
+        );
+        // Značka je smiselna le, kadar ima VSAKA možnost svojo vrstico in
+        // so si vrstice na las podobne - takrat se sicer ne da ugotoviti,
+        // katera pripada kateri možnosti. Pri možnostih, ki stojijo druga
+        // ob drugi (m / ž, DA / NE), vrstica ni njihova in značke ni.
+        const polne = podpisi.filter(Boolean);
+        if (polne.length !== i.moznosti.length) return;
+        if (new Set(vrstice).size !== vrstice.length) return;
+        if (new Set(polne).size !== 1) return;
+        if (vrstice.some((v) => vnosniVVrstici(v, i).length < 2)) return;
+        vrstice.forEach((v, k) => {
+          if (v === null) return;
+          const vrsta = vnosniVVrstici(v, i);
+          if (vrsta.length) vrsta[0].moznost = i.moznosti[k].oznaka;
+        });
+      });
+
       // Izbire in vrstice sledijo prvemu svojemu polju in podedujejo njegov
       // razdelek, da pristanejo v isti skupini.
-      const poImenu = new Map(polja.map((p) => [p.ime, p]));
       const prvoPolje = (imena) =>
         imena
           .map((n) => poImenu.get(n))
@@ -296,6 +404,7 @@
         cilj.zaporedje = p.zaporedje;
         cilj.razdelek = p.razdelek;
         cilj.podrazdelek = p.podrazdelek;
+        cilj.vrstica = p.vrstica;
       };
       izbire.forEach((i) => podedujOd(i, i.polja));
       vrstice.forEach((v) => podedujOd(v, v.odgovori.flatMap((o) => o.polja)));

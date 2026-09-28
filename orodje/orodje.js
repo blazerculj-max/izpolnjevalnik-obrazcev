@@ -362,10 +362,9 @@
     // zavarovalnem primeru"), znotraj njih pa po sklopih, ki jih obrazec piše
     // z manjšim naslovom ("Osebni dokument", "Naslov stalnega prebivališča").
     // Polja, ki na obrazcu stojijo v isti vrstici, naj bodo v isti vrstici
-    // tudi tu. Vrstico prepoznamo po enaki višini na strani.
-    const PRAG_VRSTICE = 0.9; // % višine strani
-    const visinaNa = (vir) =>
-      vir.polozaj ? vir.polozaj.y : typeof vir.y === "number" ? vir.y : 0;
+    // tudi tu. Vrstico je določila že shema (glej obrazci-pdf.js).
+    const vrsticaNa = (vir) =>
+      typeof vir.vrstica === "number" ? vir.vrstica : null;
 
     const skupine = [];
     let tekoca = null;
@@ -392,9 +391,9 @@
         tekoca.sklopi.push(tekociSklop);
         tekocaVrstica = null;
       }
-      const y = visinaNa(e.vir);
-      if (!tekocaVrstica || Math.abs(y - tekocaVrstica.y) > PRAG_VRSTICE) {
-        tekocaVrstica = { y, deli: [] };
+      const v = vrsticaNa(e.vir);
+      if (!tekocaVrstica || v === null || v !== tekocaVrstica.v) {
+        tekocaVrstica = { v, deli: [] };
         tekociSklop.vrstice.push(tekocaVrstica);
       }
       tekocaVrstica.deli.push(e.html);
@@ -507,8 +506,8 @@
     const dolge = i.moznosti.some((m) => m.oznaka.length > 28);
     return `<div class="polje sirok vrstica-odgovora${dolge ? " naslozeno" : ""}" data-id="${i.id}">
         <div class="vrstica-besedilo">
-          ${i.razdelek ? `<span class="znacka-razdelek">${escapeHtml(i.razdelek)}</span>` : ""}
-          <span class="vrstica-trditev">${escapeHtml(i.oznaka)}</span>
+          ${i.razdelekNaslov ? `<span class="znacka-razdelek">${escapeHtml(i.razdelekNaslov)}</span>` : ""}
+          ${i.oznaka ? `<span class="vrstica-trditev">${escapeHtml(i.oznaka)}</span>` : ""}
           ${i.dodatno ? `<span class="vrstica-produkt">${escapeHtml(i.dodatno)}</span>` : ""}
         </div>
         <div class="odgovor-gumbi">${gumbi}</div>
@@ -572,6 +571,11 @@
     const pojasnilo = pojasniloJeKoristno(p)
       ? `<span class="pojasnilo-polja">${escapeHtml(p.oznaka_iz_pdf)}</span>`
       : "";
+    // Kadar ista vrsta polj pripada več možnostim izbire (30 % / 50 %),
+    // vrstico uvede značka z možnostjo.
+    const moznost = p.moznost
+      ? `<span class="znacka-razdelek">${escapeHtml(p.moznost)}</span>`
+      : "";
 
     if (p.tip === "CheckBox") {
       return `<div class="polje polje-potrditev sirok" title="${escapeHtml(p.ime)}">
@@ -597,7 +601,7 @@
     const pripomba = p.pripomba
       ? `<span class="pripomba-polja">${escapeHtml(p.pripomba)}</span>`
       : "";
-    return `<div class="polje"><label class="oznaka-polja" for="${id}">${oznaka}</label>
+    return `<div class="polje"><label class="oznaka-polja" for="${id}">${moznost}${oznaka}</label>
       <div class="vnos-z-enoto">
         <input type="text" id="${id}" data-ime="${escapeHtml(p.ime)}" data-tip="TextField"
           autocomplete="off" autocorrect="off" spellcheck="false"

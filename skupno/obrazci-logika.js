@@ -33,6 +33,9 @@
   // širšemu oknu ne pobere sosednjega stolpca, poskrbi pravilo o besedilu,
   // ki ga vidita dve okenci hkrati (glej oznakaMoznosti).
   const NAJVEC_VRZEL_OZNAKE = 14;
+  const NAJVEC_ZAMIK_NAPISA_V_POLJU = 8; // pt od levega roba polja
+  const DOPUST_ROBA_NAPISA = 4; // pt - napis sme segati malo čez levi rob
+  const DELEZ_VRHA_POLJA = 0.45; // napis stoji v zgornjem delu polja
   const NAJVEC_VRZEL_MED_BESEDAMA = 8; // pt med besedama iste oznake
   // Nekateri obrazci pišejo naslove razdelkov v ozkem stolpcu ob levem robu,
   // drugi pa ne - pri teh se telo začne kar na skrajni levi. Meje zato ni
@@ -157,6 +160,21 @@
         /[a-zčšž0-9]/i.test(o.besedilo) &&
         !GLAVE.test(o.besedilo)
     );
+
+    // Nekateri obrazci napis natisnejo V polje, v njegov zgornji levi kot
+    // ("RENTA", "DOBA IZPLAČEVANJA(LET)", "PREMIJA"). Tak napis je polju
+    // bliže od česarkoli levo ali desno in je zato njegov.
+    const vPolju = vPasu.find(
+      (o) =>
+        o.od >= r.x - DOPUST_ROBA_NAPISA &&
+        o.od <= r.x + NAJVEC_ZAMIK_NAPISA_V_POLJU &&
+        o.do <= r.x + r.width + 2 &&
+        o.y >= r.y + r.height * DELEZ_VRHA_POLJA &&
+        o.y <= r.y + r.height + 1
+    );
+    if (vPolju && napisJeOznaka(pocistiNapis(vPolju.besedilo))) {
+      return vPolju.besedilo;
+    }
 
     const zdruzi = (izbrani) =>
       izbrani
@@ -796,6 +814,9 @@
   /** Napis z obrazca: odveč presledki pred ločili in velika začetnica. */
   function pocistiNapis(niz) {
     const t = pocisti(niz)
+      // Znak za valuto je natisnjen v celici in ni del napisa: "doba €
+      // izplačevanja(let)" je "doba izplačevanja(let)".
+      .replace(/(^|\s)€(\s|$)/g, "$1")
       .replace(/\s+([.,;:!?])/g, "$1")
       .replace(/\s*\/\s*/g, " / ");
     return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
@@ -1085,13 +1106,25 @@
       // "Spol1" in "Spol2" sta isti vprašanji za drugo osebo - zaporedna
       // številka pove le to, kar že pove naslov razdelka.
       const imeBrezStevilke = pocisti(polje.ime).replace(/\s*\d+$/, "");
-      const vprasanje =
-        imeJePovedno || !izVrstice || jeMoznost ? imeBrezStevilke : izVrstice;
+      // Strojno ime ("sam-izbira-4-1") ne pove nič; takrat naj govorijo
+      // same možnosti, vprašanja pa ni.
+      const imeJeStrojno = /^[a-zčšž0-9]+([_-][a-zčšž0-9]*)+$/i.test(polje.ime);
+      const vprasanje = imeJeStrojno
+        ? !jeMoznost && izVrstice && stevBesed(izVrstice) >= 2 && napisJeOznaka(izVrstice)
+          ? izVrstice
+          : null
+        : imeJePovedno || !izVrstice || jeMoznost
+          ? imeBrezStevilke
+          : izVrstice;
 
       // Pojasnilo dodamo le, če je cel stavek - kratki drobci ob polju so
       // pogosto oznaka SOSEDNJEGA polja in bi zavajali.
       const pojasnilo =
-        izVrstice && !jeMoznost && !jeIsto(izVrstice, vprasanje) && izVrstice.length > 20
+        izVrstice &&
+        !jeMoznost &&
+        vprasanje &&
+        !jeIsto(izVrstice, vprasanje) &&
+        izVrstice.length > 20
           ? izVrstice
           : null;
 
@@ -1131,7 +1164,7 @@
         razdelek: (() => {
           const r = sekcijaOb(stran, okenca[0].pravokotnik.y);
           // Razdelek, ki le ponovi vprašanje, ne pove ničesar.
-          if (!r || jeIsto(r, vprasanje)) return null;
+          if (!r || !vprasanje || jeIsto(r, vprasanje)) return null;
           return jeIsto(r.split(" ")[0], vprasanje.split(" ")[0]) ? null : r;
         })(),
         moznosti,
@@ -1145,9 +1178,17 @@
         y: s.y,
         oznaka: s.oznaka,
         dodatno: s.dodatno || null,
-        razdelek: s.razdelek,
+        // Naslov razdelka, iz katerega je izbira; pod imenom "razdelek" ga
+        // pozneje povozi zaporedna številka razdelka (glej obrazci-pdf.js).
+        razdelekNaslov: s.razdelek,
         polja: s.polja,
-        moznosti: s.moznosti.map((m) => ({ vklop: m.vklop, oznaka: m.oznaka })),
+        // Položaj okenca potrebuje vmesnik, da ve, katera vrstica polj
+        // pripada kateri možnosti.
+        moznosti: s.moznosti.map((m) => ({
+          vklop: m.vklop,
+          oznaka: m.oznaka,
+          polozaj: m.polozaj,
+        })),
       }))
       .sort((a, b) => a.stran - b.stran || a.y - b.y);
   }
