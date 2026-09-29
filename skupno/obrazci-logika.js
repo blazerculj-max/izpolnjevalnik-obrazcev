@@ -1305,6 +1305,23 @@
     return naslov.length > 0 && naslov.length <= NAJVEC_ZNAKOV_NASLOVA;
   }
 
+  /**
+   * Del odseka, ki še stoji v robnem stolpcu.
+   * Režemo le tam, kjer se besedilo telesa RES začne - z vrzeljo za mejo.
+   * Brez tega bi prerezali besedo, ki jo je pdf.js razbil na koščke in
+   * sega čez mejo ("poda" + "nih").
+   */
+  const VRZEL_ZA_ROBOM = 3; // pt
+  function obreziOdsek(odsek, meja) {
+    const kosi = odsek.kosi || [];
+    for (let i = 1; i < kosi.length; i++) {
+      const vrzel = kosi[i].x - (kosi[i - 1].x + kosi[i - 1].w);
+      if (kosi[i].x >= meja && vrzel >= VRZEL_ZA_ROBOM)
+        return sestaviOdsek(kosi.slice(0, i));
+    }
+    return odsek;
+  }
+
   function robSekcije(stran) {
     if (stran.__rob !== undefined) return stran.__rob;
     // Rob merimo po ZAČETKIH VRSTIC, ne po posameznih koščkih besedila.
@@ -1560,6 +1577,11 @@
       const bloki = [];
       (rob === null ? [] : s.odseki || (s.odseki = razdeliNaOdseke(s.kosi)))
         .filter((o) => o.od < rob)
+        // Vrstica naslova ob robu se lahko zlepi z besedilom telesa, kadar
+        // ju loči le nekaj točk ("zavarovalca" + prva vrstica izjave).
+        // Obdržimo samo tisto, kar leži v robnem stolpcu.
+        .map((o) => (o.do <= rob ? o : obreziOdsek(o, rob)))
+        .filter(Boolean)
         .sort((a, b) => b.y - a.y)
         .forEach((o) => {
           const zadnji = bloki[bloki.length - 1];
