@@ -711,10 +711,9 @@
   function izrisiZavihkePodpisov() {
     const ovoj = document.getElementById("zavihki-podpisov");
     if (!ovoj) return;
-    const strani = [...new Set(podpisniPasovi.map((p) => p.stran))].sort(
-      (a, b) => a - b
-    );
-    // Pri enem samem zavihku ni kaj izbirati.
+    // Zavihek za VSAKO stran obrazca, ne le za tiste s podpisi: tako je
+    // mogoče pogledati katero koli stran, tudi če se nanjo ne podpisuje.
+    const strani = (odprtObrazec?.shema.strani || []).map((s) => s.stran);
     if (strani.length < 2) {
       ovoj.innerHTML = "";
       return;
@@ -726,8 +725,13 @@
         return `<button type="button" class="zavihek-podpisov${
           st === izbranaStranPodpisov ? " izbran" : ""
         }" data-stran-podpisov="${st}">Str. ${st}
-          <span class="zavihek-stevec${zajetih ? " polno" : ""}"
-            >${zajetih}/${na.length}</span></button>`;
+          ${
+            na.length
+              ? `<span class="zavihek-stevec${
+                  zajetih === na.length ? " polno" : ""
+                }">${zajetih}/${na.length}</span>`
+              : ""
+          }</button>`;
       })
       .join("");
     ovoj.querySelectorAll("[data-stran-podpisov]").forEach((b) =>
@@ -747,6 +751,11 @@
     const naStrani = podpisniPasovi.filter(
       (p) => p.stran === izbranaStranPodpisov
     );
+    if (!naStrani.length) {
+      ovoj.innerHTML =
+        '<p class="namig" style="margin:0 0 8px">Na tej strani ni mesta za podpis.</p>';
+      return;
+    }
     ovoj.innerHTML = naStrani
       .map(
         (p) => `<div class="podpis-pas" data-id="${p.id}">

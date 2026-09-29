@@ -41,7 +41,7 @@
       return polje.constructor.name.replace("PDF", "");
     }
     /** Na kateri strani je pripomoček (widget) tega polja? */
-    function najdiStran(doc, widget) {
+    function najdiStran(doc, widget, straniBesedila) {
       const strani = doc.getPages();
       for (let i = 0; i < strani.length; i++) {
         const annots = strani[i].node.Annots();
@@ -51,6 +51,27 @@
             return i + 1;
           }
         }
+      }
+
+      // Nekateri obrazci imajo polja, ki niso navedena na NOBENI strani
+      // (pri Prijavi nezgode je takih 13 okenc seznama prilog). Brez tega
+      // bi vsa pristala na prvi strani, ostala brez napisa in izpadla.
+      // Pravo stran pove besedilo: napis okenca stoji tik ob njem.
+      if (straniBesedila && straniBesedila.length > 1) {
+        const r = widget.getRectangle();
+        const cy = r.y + r.height / 2;
+        const desno = r.x + r.width;
+        let naj = null;
+        straniBesedila.forEach((s) => {
+          const ob = (s.kosi || [])
+            .filter((k) => Math.abs(k.y - cy) < 7 && k.x >= desno - 2)
+            .sort((a, b) => a.x - b.x)[0];
+          if (!ob) return;
+          const vrzel = ob.x - desno;
+          if (vrzel > NAJVEC_VRZEL_DO_NAPISA) return;
+          if (!naj || vrzel < naj.vrzel) naj = { vrzel, stran: s.stran };
+        });
+        if (naj) return naj.stran;
       }
       return 1;
     }
@@ -65,7 +86,9 @@
     }
 
     /** Polja obrazca s tipom, stranjo in položajem (v odstotkih strani). */
-    function preberiPolja(doc, strani) {
+    const NAJVEC_VRZEL_DO_NAPISA = 30; // pt med okencem in njegovim napisom
+
+    function preberiPolja(doc, strani, straniBesedila) {
       return doc
         .getForm()
         .getFields()
@@ -73,7 +96,7 @@
           const tip = tipPolja(p);
           const widget = p.acroField.getWidgets()[0];
           const r = widget ? widget.getRectangle() : null;
-          const stran = widget ? najdiStran(doc, widget) : 1;
+          const stran = widget ? najdiStran(doc, widget, straniBesedila) : 1;
           const mere = strani[stran - 1];
           const skupno = {
             ime: p.getName(),
@@ -100,7 +123,7 @@
               .getWidgets()
               .map((wid) => {
                 const rr = wid.getRectangle();
-                const st = najdiStran(doc, wid);
+                const st = najdiStran(doc, wid, straniBesedila);
                 const me = strani[st - 1];
                 if (!rr || !me) return null;
                 const vklopna = wid.getOnValue();
@@ -142,7 +165,7 @@
     function shemaIzDokumenta(doc, straniBesedila) {
       const VRZEL_VRSTICE = 0.9; // % višine strani - toliko še velja za isto vrstico
       const strani = mereStrani(doc);
-      const polja = preberiPolja(doc, strani);
+      const polja = preberiPolja(doc, strani, straniBesedila);
 
       const imaBesedilo = !!(straniBesedila && straniBesedila.length);
       const razdelki = imaBesedilo

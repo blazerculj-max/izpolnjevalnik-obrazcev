@@ -22,6 +22,9 @@
   const VRZEL_PRESLEDKA = 1;
   // Pikčasta ali podčrtana črta, ki na obrazcu nadomešča vnosno polje.
   const JE_CRTA = /^[.·•‧…_\-\s]{3,}$/;
+  // Okence je v nekaterih obrazcih natisnjeno z znakovno pisavo; iz PDF-ja
+  // pride kot znak za zasebno rabo. Ni besedilo, le slika okenca.
+  const JE_ZNAK = /^[\uE000-\uF8FF\s]+$/;
   const NAJVEC_ODMIK_GLAVE = 200; // glava stolpca stoji nad celo tabelo
   const NAJVEC_ODMIK_STOLPCA = 13; // pt razlike v x, da je glava nad tem poljem
   const PRIVZETI_PAS = 22; // pt navzgor/navzdol, če polje nima soseda
@@ -35,6 +38,8 @@
   // širšemu oknu ne pobere sosednjega stolpca, poskrbi pravilo o besedilu,
   // ki ga vidita dve okenci hkrati (glej oznakaMoznosti).
   const NAJVEC_VRZEL_OZNAKE = 14;
+  // Predlog sam po sebi ni napis polja; dopolni ga beseda za poljem.
+  const JE_PREDLOG = /^(ob|od|do|v|na|pri|za|z|s|k|po)$/i;
   const NAJVEC_ZAMIK_NAPISA_V_POLJU = 8; // pt od levega roba polja
   const DOPUST_ROBA_NAPISA = 4; // pt - napis sme segati malo čez levi rob
   const DELEZ_VRHA_POLJA = 0.45; // napis stoji v zgornjem delu polja
@@ -69,7 +74,7 @@
         // Pikčasta črta ni besedilo, ampak prostor za vpis. Brez tega se
         // napisa dveh rubrik iste vrstice zlepita v enega ("naslov
         // stalnega bivališča: ..... , davčna številka: .....").
-        if (JE_CRTA.test(k.besedilo)) {
+        if (JE_CRTA.test(k.besedilo) || JE_ZNAK.test(k.besedilo)) {
           if (tekoci) odseki.push(tekoci);
           tekoci = null;
           continue;
@@ -362,6 +367,16 @@
       1
     );
 
+    // Napis, ki je le predlog ("ob", "v"), sam ne pove ničesar; dopolni ga
+    // beseda, ki stoji za poljem ("ob ___ uri" -> "ob uri").
+    const dopolniKratkega = (l, d) => {
+      const golo = pocisti(l.besedilo);
+      if (!d || !JE_PREDLOG.test(golo)) return l.besedilo;
+      const prva = pocisti(d.besedilo).split(/[\s,]+/)[0];
+      if (!prva || !/^[a-zčšž]/.test(prva)) return l.besedilo;
+      return golo + " " + prva;
+    };
+
     if (!levo) return desno ? desno.besedilo : null;
     if (!desno) return levo.besedilo;
 
@@ -397,14 +412,15 @@
     if (!levoJeTuj && levo.besedilo.length > 25 && levo.vrzel < 200) {
       return levo.besedilo;
     }
+    if (!levoJeTuj && levo.vrzel <= 60) return dopolniKratkega(levo, desno);
 
     // Napis stoji pred poljem. Kadar je levi kandidat blizu, je to on - tudi
     // če je desni za las bližje: pri "datum_rojstva" stoji desno beseda
     // "kraj", ki je oznaka NASLEDNJEGA polja (razlika v oceni je bila 15
     // proti 16,8). Besedilo robnega stolpca je iz kandidatov že izločeno.
-    if (!levoJeTuj && levo.vrzel <= 60) return levo.besedilo;
-
-    return desno.ocena < levo.ocena ? desno.besedilo : levo.besedilo;
+    return desno.ocena < levo.ocena
+      ? desno.besedilo
+      : dopolniKratkega(levo, desno);
 
   }
 
@@ -988,7 +1004,13 @@
 
   /** Napis z obrazca: odveč presledki pred ločili in velika začetnica. */
   function pocistiNapis(niz) {
-    const t = pocisti(niz)
+    // "uri, v kraju:" je rep prejšnje rubrike in začetek te; za napis polja
+    // velja zadnji del, prejšnji pa pripada polju pred njim.
+    const celo = pocisti(niz);
+    const zaVejico = /^[a-zčšž]+,\s+/.test(celo)
+      ? celo.slice(celo.indexOf(",") + 1)
+      : celo;
+    const t = pocisti(zaVejico)
       // Znak za valuto je natisnjen v celici in ni del napisa: "doba €
       // izplačevanja(let)" je "doba izplačevanja(let)".
       .replace(/(^|\s)€(\s|$)/g, "$1")
@@ -1284,7 +1306,10 @@
 
       // Vprašanje: ime polja, kadar kaj pove ("Spol", "Zavarovalna vsota").
       // Pri obrazcih z imeni tipa "Checkbox7" vzamemo besedilo vrstice.
-      const izVrstice = pocisti(polje.oznaka_iz_pdf);
+      let izVrstice = pocisti(polje.oznaka_iz_pdf);
+      // Kadar v vrstici okenc ni ničesar, stoji vprašanje NAD njimi
+      // ("Soglašam, da ... " in pod tem da / ne).
+      if (!izVrstice) izVrstice = vprasanjeNadOkenci(stran, okenca);
       const jeMoznost = moznosti.some((m) => jeIsto(m.oznaka, izVrstice));
       const imeJePovedno = !imeJeNeuporabno(polje.ime);
       // "Spol1" in "Spol2" sta isti vprašanji za drugo osebo - zaporedna
@@ -1840,12 +1865,43 @@
     return meje;
   }
 
+  // Vprašanje nad vrstico okenc: odstavek tik nad njimi, skupaj s svojimi
+  // nadaljevalnimi vrsticami.
+  const NAJVEC_ODMIK_VPRASANJA = 30; // pt nad okenci
+  const VRZEL_NADALJEVANJA = 14; // pt med vrsticama istega odstavka
+
+  function vprasanjeNadOkenci(stran, okenca) {
+    if (!stran) return "";
+    const odseki = stran.odseki || (stran.odseki = razdeliNaOdseke(stran.kosi));
+    const vrh = Math.max(
+      ...okenca.map((o) => o.pravokotnik.y + o.pravokotnik.height)
+    );
+    const nad = odseki
+      .filter((o) => o.y > vrh && o.y - vrh < NAJVEC_ODMIK_VPRASANJA)
+      .sort((a, b) => a.y - b.y);
+    if (!nad.length) return "";
+    const vrstice = [nad[0]];
+    for (const o of odseki.sort((a, b) => a.y - b.y)) {
+      const zadnja = vrstice[vrstice.length - 1];
+      if (o.y > zadnja.y && o.y - zadnja.y <= VRZEL_NADALJEVANJA) vrstice.push(o);
+    }
+    const celo = pocisti(
+      vrstice
+        .sort((a, b) => b.y - a.y)
+        .map((o) => o.besedilo)
+        .join(" ")
+    );
+    return celo.length > 25 ? celo : "";
+  }
+
   /** Ali je ime polja neuporabno ("Checkbox7") in naj raje vzamemo besedilo? */
   function imeJeNeuporabno(ime) {
     // "4", "5", "6" so v prilogah imena okenc - povedo prav toliko kot
     // "Checkbox7".
     return (
-      /^(check ?box|text ?field|polje|field)\s*\d*$/i.test(ime) ||
+      /^(check ?box|text ?field|radio ?button|group|button|polje|field|untitled)\s*\d*$/i.test(
+        ime
+      ) ||
       /^\d+$/.test(String(ime || "").trim())
     );
   }
