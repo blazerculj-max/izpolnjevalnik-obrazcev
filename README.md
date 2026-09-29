@@ -108,7 +108,7 @@ odstrani.
 ## Delo brez povezave
 
 Gumb **Prenesi za brez povezave** shrani celo orodje kot **eno datoteko HTML**
-(~4,1 MB). Odpre se z dvoklikom in deluje brez interneta.
+(~8,2 MB). Odpre se z dvoklikom in deluje brez interneta.
 
 **Obrazci so vgrajeni v to isto datoteko**, zato je seznam na voljo tudi na
 povsem odklopljeni napravi — ni je treba nikamor priklopiti in nič ni treba
@@ -141,7 +141,7 @@ ostali na stari datoteki.
 npm run dmg
 ```
 
-Nastane `dist/Izpolnjevalnik obrazcev.dmg` (~2,2 MB). Prejemnik dvoklikne
+Nastane `dist/Izpolnjevalnik obrazcev.dmg` (~4,6 MB). Prejemnik dvoklikne
 sliko in nato HTML v njej — to je vse.
 
 V sliki je **dokument, ne aplikacija**, in prav to je bistvo: aplikacijo brez
@@ -150,7 +150,7 @@ Tako orodje razdeliš brez razvijalskega računa in brez opozoril. Preverjeno:
 sliki nastavimo oznako »preneseno s Safarijem«, se priklopi normalno, HTML v
 njej pa oznake karantene sploh ne dobi.
 
-Povrhu je slika **manjša od same datoteke** (2,2 MB proti 4,3 MB) in gre skozi
+Povrhu je slika **manjša od same datoteke** (4,6 MB proti 8,2 MB) in gre skozi
 poštne filtre, ki priponke `.html` pogosto zavrnejo.
 
 > Za pravo aplikacijo z lastno ikono v Docku (in za iPad) je potreben

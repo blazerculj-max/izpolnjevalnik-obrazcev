@@ -214,6 +214,38 @@
             if (p.enota && p.oznaka === p.enota) p.oznaka = p.ime;
           }
         });
+        // Okence brez napisa, ki ga obrazec tudi ne nariše, je ostanek iz
+        // priprave obrazca ("Priloga1" ... "Priloga13" na prijavah nezgode
+        // stojijo nevidna pod besedilom). Takega ni mogoče smiselno
+        // ponuditi, zato ga v vmesniku ne kažemo.
+        polja.forEach((p) => {
+          p.brezNapisa =
+            p.tip === "CheckBox" && !(p.oznaka_iz_pdf || "").trim();
+        });
+
+        // Taka okenca kvarijo tudi iskanje oznak ostalim poljem: vrstica
+        // sega do sredine SOSEDNJEGA polja, nevidno okence pa sosed navidez
+        // približa in napis ostane zunaj pasu. Zato oznake določimo še
+        // enkrat, tokrat brez njih.
+        const uporabna = polja.filter((p) => !p.brezNapisa);
+        if (uporabna.length !== polja.length) {
+          straniBesedila.forEach((st) => {
+            delete st.odsekiPoPoljih;
+          });
+          const znova = logika.oznaciPolja(straniBesedila, uporabna, meje);
+          uporabna.forEach((p) => {
+            const najdeno = znova.get(p.ime);
+            if (!najdeno) return;
+            p.oznaka_iz_pdf = najdeno.oznaka
+              ? logika.pocistiNapis(najdeno.oznaka)
+              : null;
+            p.glava = najdeno.glava || null;
+            p.oznaka = logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
+            p.enota = najdeno.desno ? najdeno.desno.enota || null : null;
+            p.pripomba = najdeno.desno ? najdeno.desno.pripomba || null : null;
+            if (p.enota && p.oznaka === p.enota) p.oznaka = p.ime;
+          });
+        }
         podpisi = logika.najdiMestaPodpisov(straniBesedila, strani, polja);
         // Polja v okviru za podpis (ime, šifra, podpis) pokrije narisan
         // podpis; v spletnem obrazcu jih ne ponujamo.

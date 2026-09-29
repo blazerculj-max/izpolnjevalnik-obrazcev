@@ -20,6 +20,8 @@
   // ki se skoraj dotikajo. Pod to vrzeljo gre torej za isto besedo in vmes ne
   // sodi presledek; pravi presledki v teh obrazcih merijo vsaj 1,6 pt.
   const VRZEL_PRESLEDKA = 1;
+  // Pikčasta ali podčrtana črta, ki na obrazcu nadomešča vnosno polje.
+  const JE_CRTA = /^[.·•‧…_\-\s]{3,}$/;
   const NAJVEC_ODMIK_GLAVE = 200; // glava stolpca stoji nad celo tabelo
   const NAJVEC_ODMIK_STOLPCA = 13; // pt razlike v x, da je glava nad tem poljem
   const PRIVZETI_PAS = 22; // pt navzgor/navzdol, če polje nima soseda
@@ -64,6 +66,14 @@
       vrstica.sort((a, b) => a.x - b.x);
       let tekoci = null;
       for (const k of vrstica) {
+        // Pikčasta črta ni besedilo, ampak prostor za vpis. Brez tega se
+        // napisa dveh rubrik iste vrstice zlepita v enega ("naslov
+        // stalnega bivališča: ..... , davčna številka: .....").
+        if (JE_CRTA.test(k.besedilo)) {
+          if (tekoci) odseki.push(tekoci);
+          tekoci = null;
+          continue;
+        }
         if (tekoci && k.x - tekoci.do > VRZEL_STOLPCA) {
           odseki.push(tekoci);
           tekoci = null;
@@ -1212,7 +1222,13 @@
 
   /** Odveč ločila in presledki ob oznakah iz PDF-ja. */
   function pocisti(niz) {
-    return zlepiPrelomljene(String(niz || ""))
+    return (
+      zlepiPrelomljene(String(niz || ""))
+        // Okenca so v obrazcu natisnjena z znakovno pisavo (Wingdings) in
+        // pridejo iz PDF-ja kot znaki za zasebno rabo; v napisu nimajo kaj
+        // iskati.
+        .replace(/[\uE000-\uF8FF]/g, " ")
+    )
       .replace(/\s+/g, " ")
       .replace(/^[\s:.,;*-]+|[\s:.,;*-]+$/g, "")
       .trim();
@@ -1276,7 +1292,7 @@
       const imeBrezStevilke = pocisti(polje.ime).replace(/\s*\d+$/, "");
       // Strojno ime ("sam-izbira-4-1") ne pove nič; takrat naj govorijo
       // same možnosti, vprašanja pa ni.
-      const imeJeStrojno = /^[a-zčšž0-9]+([_-][a-zčšž0-9]*)+$/i.test(polje.ime);
+      const imeJeStrojno = /^[a-zčšž0-9]+([_\-=.][a-zčšž0-9]*)+$/i.test(polje.ime);
       const vprasanje = imeJeStrojno
         ? !jeMoznost && izVrstice && stevBesed(izVrstice) >= 2 && napisJeOznaka(izVrstice)
           ? izVrstice
@@ -1498,6 +1514,8 @@
   const NAJVECJI_KOLICNIK_PISAVE = 2.2; // več je naslov obrazca, ne razdelka
   const DOPUST_ROBA_PODRAZDELKA = 3; // pt: naslov stoji levo od oznak polj
   const NAJVEC_ZNAKOV_PODRAZDELKA = 80;
+  const NAJVEC_ZNAKOV_PO_PISAVI = 50; // naslov, prepoznan po pisavi
+  const NAJVEC_DELEZ_PISAVE_NASLOVA = 0.12; // redka pisava = naslovi
   const NAJMANJSI_KOLICNIK_ZA_OKENCEM = 1.9; // pisava naslova, ne trditve
   // Sestavljen naslov nosi tudi moznosti ("5. Prikljucitev / Izkljucitev /
   // Sprememba dodatnega zdravstvenega zavarovanja na potovanjih v tujini z
@@ -1534,6 +1552,19 @@
       if (!mere) return;
       const telo = telesnaVisinaPisave(s.kosi);
       if (!telo) return;
+      // Nekateri obrazci naslovov ne povečajo, ampak jih le okrepijo -
+      // takrat je znak druga pisava, ki je na strani redka.
+      const stevec = new Map();
+      s.kosi.forEach((k) => {
+        if (!k.pisava) return;
+        stevec.set(k.pisava, (stevec.get(k.pisava) || 0) + 1);
+      });
+      const telesnaPisava = [...stevec.entries()].sort((a, b) => b[1] - a[1])[0];
+      const jePisavaNaslova = (o) =>
+        o.pisava &&
+        telesnaPisava &&
+        o.pisava !== telesnaPisava[0] &&
+        (stevec.get(o.pisava) || 0) <= s.kosi.length * NAJVEC_DELEZ_PISAVE_NASLOVA;
 
       const naStrani = polja.filter((p) => p.stran === s.stran && p.pravokotnik);
       if (!naStrani.length) return;
@@ -1574,7 +1605,9 @@
       });
 
       for (const o of odseki) {
-        if (!o.visina || o.visina < telo + NAJMANJSI_PRIRASTEK_PISAVE) continue;
+        if (!o.visina) continue;
+        const vecji = o.visina >= telo + NAJMANJSI_PRIRASTEK_PISAVE;
+        if (!vecji && !jePisavaNaslova(o)) continue;
         if (o.visina > telo * NAJVECJI_KOLICNIK_PISAVE) continue; // naslov obrazca
         const c = stolpecOdseka(o);
         // Naslov sklopa stoji na levem robu stolpca - ali pa takoj za
@@ -1591,12 +1624,28 @@
           );
         if (o.od > robStolpca.get(c) + DOPUST_ROBA_PODRAZDELKA && !zaOkencem) continue;
 
-        const naslov = pocisti(o.besedilo);
+        // Navodilo v oklepaju ("(izpolnite v primeru prometne nesreče)")
+        // ni del naslova, ampak opomba pod njim.
+        const oklepaj = o.besedilo.indexOf("(");
+        const vOklepaju =
+          oklepaj > 0 ? o.besedilo.slice(oklepaj).replace(/[()]/g, "") : "";
+        const jeNavodilo = jeNavodiloVOklepaju(vOklepaju);
+        const naslov = pocisti(
+          jeNavodilo ? o.besedilo.slice(0, oklepaj) : o.besedilo
+        );
         if (naslov.length < 3 || naslov.length > NAJVEC_ZNAKOV_PODRAZDELKA) continue;
+        // Naslov, prepoznan le po pisavi, mora biti tudi kratek: znak je
+        // šibkejši od večje pisave in bi sicer pobral kakšen odstavek.
+        if (!vecji && (naslov.length > NAJVEC_ZNAKOV_PO_PISAVI || naslov.length < 8)) {
+          continue;
+        }
         if (naslov.includes("?")) continue;
         // Dolg naslov je še naslov, dokler ni poved: "Upravičenec za dodatno
         // zavarovanje ... je zavarovana oseba" je opomba pod tabelo.
-        if (naslov.length > 50 && /\b(je|so|ni|niso|naj|bo|bodo)\b/i.test(naslov)) {
+        if (
+          naslov.length > 50 &&
+          /\b(je|so|ni|ne|niso|naj|bo|bodo|se|smo|ste)\b/i.test(naslov)
+        ) {
           continue;
         }
         if (!/^([IVX]+\.|\d+\.|[A-ZČŠŽ])/.test(naslov)) continue;
@@ -1622,6 +1671,7 @@
           stolpec: c,
           y: ((mere.visina - o.y) / mere.visina) * 100,
           naslov: naslov.replace(/\s*:\s*$/, ""),
+          opomba: jeNavodilo ? pocisti(vOklepaju) : null,
         });
       }
     });
