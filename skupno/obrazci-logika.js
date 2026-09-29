@@ -1539,6 +1539,9 @@
   const NAJVECJI_KOLICNIK_PISAVE = 2.2; // več je naslov obrazca, ne razdelka
   const DOPUST_ROBA_PODRAZDELKA = 3; // pt: naslov stoji levo od oznak polj
   const NAJVEC_ZNAKOV_PODRAZDELKA = 80;
+  const NAJVEC_VRZEL_DO_POLJA = 200; // pt - dlje stoji polje druge rubrike
+  const NAJVEC_ZAMIK_NASLOVA = 20; // pt - podnaslov je lahko zamaknjen
+  const NAJMANJ_PREKRITJA_S_POLJEM = 0.6; // delež napisa, ki mora biti v polju
   const NAJVEC_ZNAKOV_PO_PISAVI = 50; // naslov, prepoznan po pisavi
   const NAJVEC_DELEZ_PISAVE_NASLOVA = 0.12; // redka pisava = naslovi
   const NAJMANJSI_KOLICNIK_ZA_OKENCEM = 1.9; // pisava naslova, ne trditve
@@ -1647,11 +1650,16 @@
               o.od - (r.x + r.width) > 0 &&
               o.od - (r.x + r.width) < 14
           );
-        if (o.od > robStolpca.get(c) + DOPUST_ROBA_PODRAZDELKA && !zaOkencem) continue;
+        // Naslov sklopa je lahko tudi zamaknjen ("Zavarovalec (sklenitelj
+        // zavarovanja)" stoji 14 pt desno od roba, ker je podnaslov).
+        const dopustRoba = vecji ? DOPUST_ROBA_PODRAZDELKA : NAJVEC_ZAMIK_NASLOVA;
+        if (o.od > robStolpca.get(c) + dopustRoba && !zaOkencem) continue;
 
         // Navodilo v oklepaju ("(izpolnite v primeru prometne nesreče)")
         // ni del naslova, ampak opomba pod njim.
-        const oklepaj = o.besedilo.indexOf("(");
+        // Navodilo je ZADNJI oklepaj: "Zavarovalec (sklenitelj zavarovanja)
+        // (izpolnite le, če ...)" ima naslov, ki sam vsebuje oklepaj.
+        const oklepaj = o.besedilo.lastIndexOf("(");
         const vOklepaju =
           oklepaj > 0 ? o.besedilo.slice(oklepaj).replace(/[()]/g, "") : "";
         const jeNavodilo = jeNavodiloVOklepaju(vOklepaju);
@@ -1659,15 +1667,32 @@
           jeNavodilo ? o.besedilo.slice(0, oklepaj) : o.besedilo
         );
         if (naslov.length < 3 || naslov.length > NAJVEC_ZNAKOV_PODRAZDELKA) continue;
+        // Naslov stoji sam v svoji vrstici. Kjer je v isti vrstici polje, je
+        // to napis tega polja ("Organizacija, v kateri je zavarovanec
+        // zaposlen oziroma je njen član: ______"), ne naslov sklopa.
+        const poljeVVrstici = naStrani.some((p) => {
+          const r = p.pravokotnik;
+          return (
+            r.x >= o.do - 2 &&
+            r.x - o.do < NAJVEC_VRZEL_DO_POLJA &&
+            stolpecOdseka({ od: r.x }) === c &&
+            o.y > r.y - 2 &&
+            o.y < r.y + r.height + 2
+          );
+        });
+        if (poljeVVrstici) continue;
         // Naslov, prepoznan le po pisavi, mora biti tudi kratek: znak je
         // šibkejši od večje pisave in bi sicer pobral kakšen odstavek.
-        if (!vecji && (naslov.length > NAJVEC_ZNAKOV_PO_PISAVI || naslov.length < 8)) {
-          continue;
-        }
+        // Dvopičje na koncu je močan znak naslova, zato tak sme biti daljši.
+        const meja = /:\s*$/.test(o.besedilo)
+          ? NAJVEC_ZNAKOV_PODRAZDELKA
+          : NAJVEC_ZNAKOV_PO_PISAVI;
+        if (!vecji && (naslov.length > meja || naslov.length < 8)) continue;
         if (naslov.includes("?")) continue;
         // Dolg naslov je še naslov, dokler ni poved: "Upravičenec za dodatno
         // zavarovanje ... je zavarovana oseba" je opomba pod tabelo.
         if (
+          !/:\s*$/.test(o.besedilo) &&
           naslov.length > 50 &&
           /\b(je|so|ni|ne|niso|naj|bo|bodo|se|smo|ste)\b/i.test(naslov)
         ) {
@@ -1680,14 +1705,15 @@
         if (/^[A-ZČŠŽ]{2,}[-/][\w./-]*\d/.test(naslov)) continue;
 
         // Besedilo, ki leži V polju ali ob njem, je vsebina, ne naslov.
+        // Napis je vsebina polja le, kadar leži v njem v CELOTI. Naslov nad
+        // poljem se z njim pogosto malo prekriva ("Zavarovanec (zavarovana
+        // oseba):" sega 60 pt čez levi rob polja pod njim) in to ga ne sme
+        // razveljaviti.
         const vPolju = naStrani.some((p) => {
           const r = p.pravokotnik;
-          return (
-            o.y > r.y - 2 &&
-            o.y < r.y + r.height + 2 &&
-            o.do > r.x &&
-            o.od < r.x + r.width
-          );
+          if (o.y <= r.y - 2 || o.y >= r.y + r.height + 2) return false;
+          const prekritje = Math.min(o.do, r.x + r.width) - Math.max(o.od, r.x);
+          return prekritje > (o.do - o.od) * NAJMANJ_PREKRITJA_S_POLJEM;
         });
         if (vPolju) continue;
 
