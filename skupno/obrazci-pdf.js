@@ -89,6 +89,7 @@
     const NAJVEC_VRZEL_DO_NAPISA = 30; // pt med okencem in njegovim napisom
 
     function preberiPolja(doc, strani, straniBesedila) {
+      popraviObrnjenePravokotnike(doc);
       dodajManjkajocaPolja(doc);
       return doc
         .getForm()
@@ -505,6 +506,7 @@
       } = nastavitve;
 
       // Isti popravki kot pri branju sheme, sicer se imena polj razlikujejo.
+      popraviObrnjenePravokotnike(doc);
       dodajManjkajocaPolja(doc);
 
       const form = doc.getForm();
@@ -698,6 +700,56 @@
     }
 
     /** Nastavi večokenčno potrditveno polje na izbrano možnost. */
+    /**
+     * Obrne pravokotnike okvirjev, ki so zapisani "narobe obrnjeno".
+     *
+     * V PDF-ju je /Rect lahko zapisan s katerimakoli nasprotnima ogliščema;
+     * bralnik ga popravi sam, pdf-lib pa ne. Pri otroški nezgodi so tako
+     * zapisana štiri polja ("zaposleni" in dva dela številke računa) in se
+     * ob sploščitvi izrišejo za vrstico previsoko - okence se podvoji.
+     */
+    function popraviObrnjenePravokotnike(doc) {
+      const obdelani = new Set();
+      const popravi = (dict) => {
+        if (!dict || typeof dict.lookup !== "function") return;
+        const rect = dict.lookup(PDFName.of("Rect"));
+        if (!rect || typeof rect.size !== "function" || rect.size() !== 4) return;
+        const v = [0, 1, 2, 3].map((i) => {
+          const st = rect.lookup(i);
+          return st && typeof st.asNumber === "function" ? st.asNumber() : null;
+        });
+        if (v.some((x) => x === null)) return;
+        if (v[0] <= v[2] && v[1] <= v[3]) return;
+        const urejen = [
+          Math.min(v[0], v[2]),
+          Math.min(v[1], v[3]),
+          Math.max(v[0], v[2]),
+          Math.max(v[1], v[3]),
+        ];
+        dict.set(PDFName.of("Rect"), doc.context.obj(urejen));
+      };
+
+      doc.getPages().forEach((pg) => {
+        const annots = pg.node.Annots && pg.node.Annots();
+        if (!annots) return;
+        for (let i = 0; i < annots.size(); i++) {
+          const ref = annots.get(i);
+          obdelani.add(String(ref));
+          popravi(doc.context.lookup(ref));
+        }
+      });
+      doc
+        .getForm()
+        .getFields()
+        .forEach((f) =>
+          f.acroField.getWidgets().forEach((w) => {
+            const ref = doc.context.getObjectRef(w.dict);
+            if (ref && obdelani.has(String(ref))) return;
+            popravi(w.dict);
+          })
+        );
+    }
+
     /**
      * V seznam polj obrazca doda okvirje, ki so samo na straneh.
      *
