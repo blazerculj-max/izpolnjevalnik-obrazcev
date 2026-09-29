@@ -306,6 +306,9 @@
       const stolpec = [sidro];
       for (let j = i - 1; j >= 0; j--) {
         if (vStolpcu[j].y - stolpec[stolpec.length - 1].y > 14) break;
+        // Vrstica z dvopičjem je uvod v seznam ("... / fizioterapevtskega
+        // zdravljenja:"), ne prvi del napisa pod njo.
+        if (/:\s*$/.test(vStolpcu[j].besedilo)) break;
         stolpec.push(vStolpcu[j]);
       }
       for (let j = i + 1; j < vStolpcu.length; j++) {
@@ -443,14 +446,18 @@
         );
       }
       const odseki = stran.odsekiPoPoljih;
+      const osnovna = najdiOznakoVrstice(
+        odseki,
+        polje,
+        polja,
+        stran,
+        meje ? meje.get(polje.stran) : null
+      );
+      const zUvodom = dopolniZUvodom(osnovna, polje, stran, polja);
       oznake.set(polje.ime, {
-        oznaka: najdiOznakoVrstice(
-          odseki,
-          polje,
-          polja,
-          stran,
-          meje ? meje.get(polje.stran) : null
-        ),
+        oznaka: zUvodom,
+        // Vprašanje nad poljem je napis, tudi kadar je dolg.
+        izUvoda: zUvodom !== osnovna,
         desno: polje.tip === "TextField" ? najdiDesnoPripombo(odseki, polje) : null,
         glava:
           polje.tip === "CheckBox"
@@ -459,6 +466,114 @@
       });
     }
     return oznake;
+  }
+
+  /**
+   * Številka, razrezana na več okenc (IBAN: SI56 in nato 4 + 4 + 4 + 3
+   * števke), dobi napis z mestom, ki ga posamezno okence zajema. Brez tega
+   * so vsa okenca videti enaka in ni jasno, kam gre kateri del.
+   */
+  const NAJMANJ_DELOV_STEVILKE = 3;
+  const NAJVEC_ZNAKOV_DELA = 6;
+
+  function oznaciRazdeljenoStevilko(polja) {
+    const vrstice = new Map();
+    polja.forEach((p) => {
+      if (p.tip !== "TextField" || !p.pravokotnik) return;
+      const cy = Math.round((p.pravokotnik.y + p.pravokotnik.height / 2) / 3);
+      const kljuc = `${p.stran}|${cy}`;
+      if (!vrstice.has(kljuc)) vrstice.set(kljuc, []);
+      vrstice.get(kljuc).push(p);
+    });
+
+    vrstice.forEach((vrsta) => {
+      vrsta.sort((a, b) => a.pravokotnik.x - b.pravokotnik.x);
+      let zacetek = 0;
+      while (zacetek < vrsta.length) {
+        let konec = zacetek;
+        while (
+          konec < vrsta.length &&
+          vrsta[konec].najvec_znakov > 0 &&
+          vrsta[konec].najvec_znakov <= NAJVEC_ZNAKOV_DELA
+        ) {
+          konec++;
+        }
+        const deli = vrsta.slice(zacetek, konec);
+        if (deli.length >= NAJMANJ_DELOV_STEVILKE) {
+          const osnova = deli[0].oznaka;
+          let mesto = 1;
+          deli.forEach((d) => {
+            const zadnje = mesto + d.najvec_znakov - 1;
+            d.oznaka = `${osnova} (${mesto}.-${zadnje}. števka)`;
+            mesto = zadnje + 1;
+          });
+        }
+        zacetek = konec > zacetek ? konec : zacetek + 1;
+      }
+    });
+  }
+
+  /**
+   * Polje brez napisa ali samo s predlogom ("od", "do") dobi vprašanje,
+   * ki stoji nad njim: "Čas odsotnosti od dela ...: od __ do __" in
+   * "Točen opis nezgodnega dogodka ...?" z okvirjem pod vprašanjem.
+   */
+  function dopolniZUvodom(oznaka, polje, stran, polja) {
+    if (polje.tip !== "TextField") return oznaka;
+    const t = String(oznaka || "").trim();
+    const besede = t.split(/\s+/).filter(Boolean);
+    const samPredlog = besede.length > 0 && besede.every((b) => JE_PREDLOG.test(b));
+    if (t && !samPredlog) return oznaka;
+    // "od __ do __" je ena vrstica z enim vprašanjem; da se dolg uvod ne
+    // ponovi dvakrat, ga nosi prvo polje v vrstici, drugo pa ostane "do".
+    if (samPredlog && polje.pravokotnik) {
+      const cy = polje.pravokotnik.y + polje.pravokotnik.height / 2;
+      const jeLevejse = (polja || []).some(
+        (d) =>
+          d !== polje &&
+          d.stran === polje.stran &&
+          d.pravokotnik &&
+          d.pravokotnik.x < polje.pravokotnik.x &&
+          Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 6
+      );
+      if (jeLevejse) return oznaka;
+    }
+    const uvod = uvodNadPoljem(stran, polje, polja);
+    if (!uvod) return oznaka;
+    return samPredlog ? `${uvod} ${besede[0].toLowerCase()}` : uvod;
+  }
+
+  /** Vprašanje ali uvod, ki stoji tik nad poljem in se konča z "?" ali ":". */
+  function uvodNadPoljem(stran, polje, polja) {
+    if (!stran || !polje.pravokotnik) return "";
+    const odseki = stran.odseki || (stran.odseki = razdeliNaOdseke(stran.kosi));
+    const r = polje.pravokotnik;
+    // Napis nad visokim okvirjem ima osnovnico lahko malenkost NIŽE od
+    // njegovega zgornjega roba, zato dopustimo nekaj točk razlike.
+    const vrh = r.y + r.height - DOPUST_ROBA_NAPISA;
+    const nad = odseki
+      .filter(
+        (o) =>
+          o.y > vrh &&
+          o.y - vrh < NAJVEC_ODMIK_VPRASANJA &&
+          o.od < r.x + r.width &&
+          o.do > r.x - NAJVEC_VRZEL_DO_POLJA
+      )
+      .sort((a, b) => a.y - b.y);
+    if (!nad.length) return "";
+    const vrstica = nad[0];
+    // Kar stoji v isti vrstici kot kakšno drugo polje, je napis TISTEGA polja.
+    const zasedena = (polja || []).some(
+      (d) =>
+        d !== polje &&
+        d.stran === polje.stran &&
+        d.pravokotnik &&
+        Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - vrstica.y) < 6
+    );
+    if (zasedena) return "";
+    // Dvopičje preverimo na surovem besedilu - pocisti ga odreže.
+    if (!/[?:]\s*$/.test(vrstica.besedilo)) return "";
+    return pocisti(vrstica.besedilo);
   }
 
   /**
@@ -928,7 +1043,9 @@
       besedilo += (vrzel >= VRZEL_PRESLEDKA ? " " : "") + vrsta[i].besedilo;
       konec = vrsta[i].x + vrsta[i].w;
     }
-    return besedilo;
+    // "moški," in "ostalo (navedite): ......" sta na obrazcu del stavka;
+    // kot napis gumba pa je pravilno le "moški" oziroma "ostalo (navedite)".
+    return besedilo.replace(/[\s.·•‧…_:,;-]+$/, "").trim() || null;
   }
 
   /** Oznaka možnosti: besedilo ob okencu, sicer glava stolpca, sicer vrednost. */
@@ -1052,7 +1169,21 @@
     ) {
       return napis;
     }
+    // Vprašanje je vedno napis polja, tudi dolgo: "Ali je bil dogodek
+    // prijavljen policiji in katera policijska postaja ga je obravnavala?"
+    if (jeVprasanje(napis)) return napis;
     return napisJeOznaka(napis) ? napis : cisto || pocisti(ime);
+  }
+
+  /**
+   * Cela poved z vprašajem - vprašanje obrazca, ki mu polje odgovarja.
+   * Vprašanja v vprašalniku o zdravstvenem stanju merijo do 170 znakov in
+   * povedo bistveno več kot ime polja ("Bolezen", "NE prom.nesreča").
+   */
+  const NAJVEC_ZNAKOV_VPRASANJA = 200;
+  function jeVprasanje(napis) {
+    const t = String(napis || "").trim();
+    return t.endsWith("?") && t.length <= NAJVEC_ZNAKOV_VPRASANJA;
   }
 
   /** Število besed (ločila niso beseda). */
@@ -1070,7 +1201,7 @@
 
   /** Je ime polja le prve nekaj besed napisa? ("ali je bila" / cel stavek) */
   const NAJVEC_ZNAKOV_ODREZANEGA = 120;
-  const NAJVEC_ZNAKOV_TRDITVE = 140; // trditev ob okencu je lahko cela poved
+  const NAJVEC_ZNAKOV_TRDITVE = 200; // trditev ob okencu je lahko cela poved
   function imeJeZacetekNapisa(ime, napis) {
     if (!napis || napis.length > NAJVEC_ZNAKOV_ODREZANEGA) return false;
     const besede = (s) =>
@@ -1318,7 +1449,11 @@
       // Strojno ime ("sam-izbira-4-1") ne pove nič; takrat naj govorijo
       // same možnosti, vprašanja pa ni.
       const imeJeStrojno = /^[a-zčšž0-9]+([_\-=.][a-zčšž0-9]*)+$/i.test(polje.ime);
-      const vprasanje = imeJeStrojno
+      // Vprašanje z obrazca ("Ali se je nezgoda zgodila v prometni
+      // nesreči?") pove več kot ime polja ("NE prom.nesreča").
+      const vprasanje = jeVprasanje(izVrstice)
+        ? izVrstice
+        : imeJeStrojno
         ? !jeMoznost && izVrstice && stevBesed(izVrstice) >= 2 && napisJeOznaka(izVrstice)
           ? izVrstice
           : null
@@ -1941,6 +2076,7 @@
     oznaciPoljaVPodpisih,
     zdruziVVrstice,
     zdruziVIzbire,
+    oznaciRazdeljenoStevilko,
     najdiRazdelke,
     najdiPodrazdelke,
     dolociStolpce,

@@ -14,6 +14,11 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { PDFDocument } = require("pdf-lib");
+const pdfApi = require("../skupno/obrazci-pdf.js").ustvari({
+  PDFLib: require("pdf-lib"),
+  fontkit: require("@pdf-lib/fontkit"),
+  logika: require("../skupno/obrazci-logika.js"),
+});
 
 const KOREN = path.join(__dirname, "..");
 const ORODJE = path.join(KOREN, "public", "orodje-obrazci.html");
@@ -33,6 +38,9 @@ async function kazaloObrazcev() {
     const bajti = fs.readFileSync(path.join(OBRAZCI, d));
     try {
       const doc = await PDFDocument.load(bajti, { ignoreEncryption: true });
+      // Enako kot orodje: štejemo tudi okvirje, ki jih obrazec pozabi
+      // navesti med polji (glej dodajManjkajocaPolja v obrazci-pdf.js).
+      pdfApi.dodajManjkajocaPolja(doc);
       const polja = doc.getForm().getFields();
       if (polja.length === 0) {
         console.warn(`⚠️  ${d}: brez vnosnih polj (ni »aktiven« obrazec) — preskočen.`);

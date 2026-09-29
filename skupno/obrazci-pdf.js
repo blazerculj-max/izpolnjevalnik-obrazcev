@@ -21,7 +21,7 @@
    * @param {Object} odvisnosti.logika - skupno/obrazci-logika.js
    */
   function ustvari({ PDFLib, fontkit, logika }) {
-    const { rgb, PDFName } = PDFLib;
+    const { rgb, PDFName, PDFRef, PDFDict } = PDFLib;
 
     // Tip polja ugotovimo z instanceof, ne iz constructor.name: v pomanjšani
     // (minified) različici pdf-lib za brskalnik so imena razredov skrajšana
@@ -89,6 +89,7 @@
     const NAJVEC_VRZEL_DO_NAPISA = 30; // pt med okencem in njegovim napisom
 
     function preberiPolja(doc, strani, straniBesedila) {
+      dodajManjkajocaPolja(doc);
       return doc
         .getForm()
         .getFields()
@@ -164,6 +165,7 @@
      */
     function shemaIzDokumenta(doc, straniBesedila) {
       const VRZEL_VRSTICE = 0.9; // % višine strani - toliko še velja za isto vrstico
+      const NAJMANJSI_ZAMIK_STOLPCA = 1; // % širine strani
       const strani = mereStrani(doc);
       const polja = preberiPolja(doc, strani, straniBesedila);
 
@@ -229,7 +231,9 @@
             ? logika.pocistiNapis(najdeno.oznaka)
             : null;
           p.glava = najdeno.glava || null;
-          p.oznaka = logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
+          p.oznaka = najdeno.izUvoda
+            ? najdeno.oznaka
+            : logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
           if (najdeno.desno) {
             p.enota = najdeno.desno.enota || null;
             p.pripomba = najdeno.desno.pripomba || null;
@@ -263,12 +267,15 @@
               ? logika.pocistiNapis(najdeno.oznaka)
               : null;
             p.glava = najdeno.glava || null;
-            p.oznaka = logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
+            p.oznaka = najdeno.izUvoda
+            ? najdeno.oznaka
+            : logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
             p.enota = najdeno.desno ? najdeno.desno.enota || null : null;
             p.pripomba = najdeno.desno ? najdeno.desno.pripomba || null : null;
             if (p.enota && p.oznaka === p.enota) p.oznaka = p.ime;
           });
         }
+        logika.oznaciRazdeljenoStevilko(polja);
         podpisi = logika.najdiMestaPodpisov(straniBesedila, strani, polja);
         // Polja v okviru za podpis (ime, šifra, podpis) pokrije narisan
         // podpis; v spletnem obrazcu jih ne ponujamo.
@@ -369,7 +376,10 @@
         const prej = poVrsticah.get(p.vrstica - 1);
         if (!prej || !prej.length) return;
         if (prej[0].stran !== p.stran || prej[0].razdelek !== p.razdelek) return;
-        if ((p.polozaj?.x ?? 0) >= levoV(p.vrstica - 1)) return;
+        // Zamaknjeno mora biti OPAZNO: stotinka odstotka je zaokroževanje,
+        // ne stolpec (tri vprašanja vprašalnika stojijo vsa na x = 82,1 %).
+        if ((p.polozaj?.x ?? 0) >= levoV(p.vrstica - 1) - NAJMANJSI_ZAMIK_STOLPCA)
+          return;
         p.vrstica -= 1;
         p.uvajaVrstico = true;
       });
@@ -491,9 +501,18 @@
         zakleni = true,
         oznake = [],
         pisavaBajti = null,
+        straniPolj = null,
       } = nastavitve;
 
+      // Isti popravki kot pri branju sheme, sicer se imena polj razlikujejo.
+      dodajManjkajocaPolja(doc);
+
       const form = doc.getForm();
+
+      // Nekateri obrazci imajo polja, ki niso navedena na nobeni strani.
+      // pdf-lib ob sploščitvi zanje ne najde strani in izvoz odpove
+      // ("Could not find page for PDFRef"). Uskladimo jih s stranmi.
+      if (straniPolj) uskladiPolja(doc, straniPolj);
       const opozorila = [];
 
       // Pisava s šumniki mora biti vgrajena, preden nastavimo besedilo.
@@ -554,6 +573,13 @@
         }
       }
 
+      if (zakleni) razresiVideze(doc, form, opozorila);
+
+      // Nekateri obrazci imajo za okence vklopljeni videz enak izklopljenemu -
+      // prazen kvadratek. Bralnik kljukico nariše sam (obrazec ima
+      // /NeedAppearances), ob sploščitvi pa se izgubi, zato jo narišemo mi.
+      const brezKljukice = zakleni ? okencaBrezKljukice(doc, form) : [];
+
       const jeZaOznaciti = Array.isArray(oznake) && oznake.length > 0;
 
       // Okenca obrazca so izrisana NAD vsebino strani, zato bi bil križec,
@@ -570,9 +596,25 @@
       }
 
       // Križci v okenca, ki so na obrazcu narisana, a nimajo polja
-      for (const o of Array.isArray(oznake) ? oznake : []) {
+      for (const o of [
+        ...(Array.isArray(oznake) ? oznake : []),
+        ...brezKljukice,
+      ]) {
         try {
           const stran = doc.getPages()[Math.max(0, (o.stran || 1) - 1)];
+          if (o.oblika === "kvadrat") {
+            // Tako so videti kljukice, ki jih riše sam obrazec: polno
+            // pobarvan kvadratek sredi okenca.
+            const rob = o.sirina * 0.3;
+            stran.drawRectangle({
+              x: o.x + rob,
+              y: o.y + o.visina * 0.3,
+              width: o.sirina - 2 * rob,
+              height: o.visina * 0.4,
+              color: rgb(0, 0, 0),
+            });
+            continue;
+          }
           // Debelina in rob sta usklajena z videzom pravih kljukic v obrazcu -
           // tanka črta v 7 pt okencu se na tisku skoraj ne vidi.
           const rob = Math.max(1, o.sirina * 0.2);
@@ -656,6 +698,214 @@
     }
 
     /** Nastavi večokenčno potrditveno polje na izbrano možnost. */
+    /**
+     * V seznam polj obrazca doda okvirje, ki so samo na straneh.
+     *
+     * V Prijavi nezgode manjka v AcroForm enajst okvirjev (status
+     * zavarovanca, policijska postaja, prometna nesreča, št. vozniškega
+     * dovoljenja, podatki upravičenca). Bralnik jih izriše in vanje je
+     * mogoče pisati, orodje pa jih brez tega popravka sploh ne vidi.
+     * Okvirje z istim imenom združimo v eno polje z otroki, tako kot bi
+     * jih zapisal pravilno izdelan obrazec.
+     */
+    function dodajManjkajocaPolja(doc) {
+      const acro = doc.catalog.lookup(PDFName.of("AcroForm"));
+      if (!acro || typeof acro.lookup !== "function") return;
+      const seznam = acro.lookup(PDFName.of("Fields"));
+      if (!seznam || typeof seznam.push !== "function") return;
+
+      const zeVPolju = new Set();
+      doc
+        .getForm()
+        .getFields()
+        .forEach((f) =>
+          f.acroField
+            .getWidgets()
+            .forEach((w) => zeVPolju.add(kljucOkvirja(doc, w.dict)))
+        );
+
+      const skupine = new Map();
+      doc.getPages().forEach((pg) => {
+        const annots = pg.node.Annots && pg.node.Annots();
+        if (!annots) return;
+        for (let i = 0; i < annots.size(); i++) {
+          const ref = annots.get(i);
+          const dict = doc.context.lookup(ref);
+          if (!dict || typeof dict.get !== "function") continue;
+          const vrsta = dict.get(PDFName.of("FT"));
+          const ime = dict.get(PDFName.of("T"));
+          if (!vrsta || !ime || dict.get(PDFName.of("Parent"))) continue;
+          if (zeVPolju.has(kljucOkvirja(doc, dict))) continue;
+          const kljuc = `${String(vrsta)}|${String(ime)}`;
+          if (!skupine.has(kljuc))
+            skupine.set(kljuc, { vrsta, ime, dict, deli: [] });
+          skupine.get(kljuc).deli.push(ref);
+        }
+      });
+
+      skupine.forEach(({ vrsta, ime, dict, deli }) => {
+        if (deli.length === 1) {
+          seznam.push(deli[0]);
+          return;
+        }
+        // Več okvirjev z istim imenom je ena sama izbira z več okenci.
+        const starsevski = doc.context.obj({
+          FT: vrsta,
+          T: ime,
+          Kids: deli,
+        });
+        const zastavice = dict.get(PDFName.of("Ff"));
+        if (zastavice) starsevski.set(PDFName.of("Ff"), zastavice);
+        const starsevskiRef = doc.context.register(starsevski);
+        deli.forEach((ref) => {
+          const otrok = doc.context.lookup(ref);
+          otrok.set(PDFName.of("Parent"), starsevskiRef);
+          otrok.delete(PDFName.of("T"));
+          otrok.delete(PDFName.of("FT"));
+        });
+        seznam.push(starsevskiRef);
+      });
+    }
+
+    /**
+     * Uskladi seznam polj obrazca s seznamom oznak na straneh.
+     *
+     * Nekateri obrazci (npr. Prijava nezgode) imajo vsako polje zapisano
+     * dvakrat: strani kažejo na en niz okvirjev, AcroForm pa na drug,
+     * enak niz. Bralnik riše tiste s strani, pdf-lib pa izpolnjuje tiste
+     * iz AcroForm - vpisano se zato ne vidi, sploščitev pa odpove z
+     * "Could not find page for PDFRef", ker okvir ni na nobeni strani.
+     * Dvojnika na strani zamenjamo s pravim poljem; če dvojnika ni,
+     * polje pripnemo na stran, ki smo jo zanj ugotovili pri branju sheme.
+     */
+    function uskladiPolja(doc, straniPolj) {
+      const strani = doc.getPages();
+      const naStraneh = new Set();
+      const dvojniki = new Map();
+      strani.forEach((pg) => {
+        const seznam = pg.node.Annots && pg.node.Annots();
+        if (!seznam) return;
+        for (let i = 0; i < seznam.size(); i++) {
+          const ref = seznam.get(i);
+          naStraneh.add(String(ref));
+          const kljuc = kljucOkvirja(doc, doc.context.lookup(ref));
+          if (kljuc && !dvojniki.has(kljuc))
+            dvojniki.set(kljuc, { seznam, mesto: i });
+        }
+      });
+
+      doc
+        .getForm()
+        .getFields()
+        .forEach((f) => {
+          const stran = straniPolj[f.getName()];
+          f.acroField.getWidgets().forEach((w) => {
+            const ref = doc.context.getObjectRef(w.dict);
+            if (!ref || naStraneh.has(String(ref))) return;
+            naStraneh.add(String(ref));
+            const kljuc = kljucOkvirja(doc, w.dict);
+            const dvojnik = kljuc && dvojniki.get(kljuc);
+            if (dvojnik) {
+              dvojnik.seznam.set(dvojnik.mesto, ref);
+              dvojniki.delete(kljuc);
+              return;
+            }
+            const pg = stran ? strani[stran - 1] : null;
+            if (pg) pg.node.addAnnot(ref);
+          });
+        });
+    }
+
+    /**
+     * Zapiše seznam videzov okenca neposredno v /AP /N.
+     *
+     * Kadar obrazec tja postavi sklic na slovar stanj (<< /Da ... /Off ... >>),
+     * pdf-lib ob sploščitvi ne izbere pravega stanja, ampak na stran nariše
+     * kar slovar - okence ostane prazno. Sklic zato razrešimo vnaprej.
+     */
+    function razresiVideze(doc, form, opozorila) {
+      try {
+        form.getFields().forEach((f) => {
+          const tip = tipPolja(f);
+          if (tip !== "CheckBox" && tip !== "RadioGroup") return;
+          f.acroField.getWidgets().forEach((w) => {
+            const ap = w.dict.lookup(PDFName.of("AP"));
+            if (!ap || typeof ap.get !== "function") return;
+            const n = ap.get(PDFName.of("N"));
+            if (!(n instanceof PDFRef)) return;
+            const razresen = doc.context.lookup(n);
+            if (razresen instanceof PDFDict) ap.set(PDFName.of("N"), razresen);
+          });
+        });
+      } catch (e) {
+        opozorila.push(`Videza okenc ni bilo mogoče razrešiti: ${e.message}`);
+      }
+    }
+
+    /**
+     * Poišče označena okenca, ki v obrazcu nimajo narisane kljukice.
+     * Vrne mesta (v točkah), kamor naj sami narišemo križec.
+     */
+    function okencaBrezKljukice(doc, form) {
+      const mesta = [];
+      const strani = doc.getPages();
+      form.getFields().forEach((f) => {
+        const tip = tipPolja(f);
+        if (tip !== "CheckBox" && tip !== "RadioGroup") return;
+        f.acroField.getWidgets().forEach((w) => {
+          const stanje = w.dict.get(PDFName.of("AS"));
+          if (!stanje || String(stanje) === "/Off") return;
+          if (!videzJePrazen(doc, w, stanje)) return;
+          const stran = strani.findIndex((pg) => {
+            const a = pg.node.Annots && pg.node.Annots();
+            if (!a) return false;
+            const ref = doc.context.getObjectRef(w.dict);
+            for (let i = 0; i < a.size(); i++)
+              if (String(a.get(i)) === String(ref)) return true;
+            return false;
+          });
+          const r = w.getRectangle();
+          mesta.push({
+            stran: (stran < 0 ? 0 : stran) + 1,
+            x: r.x,
+            y: r.y,
+            sirina: r.width,
+            visina: r.height,
+            oblika: "kvadrat",
+          });
+        });
+      });
+      return mesta;
+    }
+
+    /** Ali je vklopljeni videz okenca enak izklopljenemu (torej brez kljukice)? */
+    function videzJePrazen(doc, w, stanje) {
+      try {
+        const ap = w.dict.lookup(PDFName.of("AP"));
+        const n = ap && ap.lookup(PDFName.of("N"));
+        if (!n || typeof n.lookup !== "function") return false;
+        const vklop = n.lookup(stanje);
+        const izklop = n.lookup(PDFName.of("Off"));
+        if (!vklop || !izklop) return false;
+        const a = vklop.getContents();
+        const b = izklop.getContents();
+        if (!a || !b || a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    /** Okvir prepoznamo po imenu polja in položaju - dvojnika sta enaka. */
+    function kljucOkvirja(doc, dict) {
+      if (!dict || typeof dict.get !== "function") return null;
+      const rect = dict.get(PDFName.of("Rect"));
+      if (!rect) return null;
+      const ime = dict.get(PDFName.of("T"));
+      return `${ime ? String(ime) : ""}|${String(rect)}`;
+    }
+
     function nastaviIzbiro(polje, vklop, opozorila) {
       const okenca = polje.acroField.getWidgets();
       const iskano = okenca
@@ -674,7 +924,13 @@
       });
     }
 
-    return { shemaIzDokumenta, izpolni, mereStrani, preberiPolja };
+    return {
+      shemaIzDokumenta,
+      izpolni,
+      mereStrani,
+      preberiPolja,
+      dodajManjkajocaPolja,
+    };
   }
 
   return { ustvari };

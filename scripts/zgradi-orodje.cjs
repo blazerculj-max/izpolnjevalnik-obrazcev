@@ -18,6 +18,11 @@
 const fs = require("fs");
 const path = require("path");
 const { PDFDocument } = require("pdf-lib");
+const pdfApi = require("../skupno/obrazci-pdf.js").ustvari({
+  PDFLib: require("pdf-lib"),
+  fontkit: require("@pdf-lib/fontkit"),
+  logika: require("../skupno/obrazci-logika.js"),
+});
 
 const KOREN = path.join(__dirname, "..");
 const IZHOD = path.join(KOREN, "public", "orodje-obrazci.html");
@@ -53,6 +58,9 @@ async function vgrajeniObrazci() {
     const bajti = fs.readFileSync(path.join(mapa, d));
     try {
       const doc = await PDFDocument.load(bajti, { ignoreEncryption: true });
+      // Enako kot orodje: štejemo tudi okvirje, ki jih obrazec pozabi
+      // navesti med polji (glej dodajManjkajocaPolja v obrazci-pdf.js).
+      pdfApi.dodajManjkajocaPolja(doc);
       const stPolj = doc.getForm().getFields().length;
       if (stPolj === 0) {
         console.warn(`   ⚠️  ${d}: brez vnosnih polj — ni vgrajen.`);

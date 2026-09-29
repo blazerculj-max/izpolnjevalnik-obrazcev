@@ -1040,12 +1040,19 @@
       const doc = await window.PDFLib.PDFDocument.load(izvorniBajti.slice(), {
         ignoreEncryption: true,
       });
+      // Nekateri obrazci polj ne navedejo na nobeni strani; brez tega
+      // seznama jih izvoz ne najde in sploščitev odpove.
+      const straniPolj = {};
+      (odprtObrazec.shema.polja || []).forEach((p) => {
+        straniPolj[p.ime] = p.stran;
+      });
       const { pdf, opozorila } = await obrazciPdf.izpolni(doc, {
         vrednosti,
         podpisi,
         zakleni: document.getElementById("zakleni").checked,
         oznake,
         pisavaBajti,
+        straniPolj,
       });
 
       sprostiBlobe(); // prejšnji izvoz ne rabi več viseti v pomnilniku
