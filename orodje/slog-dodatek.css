@@ -57,6 +57,14 @@ a.gumb-tih.svetel { text-decoration: none; display: inline-block; }
 /* ---------- kazalo pripravljenih obrazcev (samo na spletu) ---------- */
 .kazalo-obrazcev.skrit { display: none; }
 .kazalo-obrazcev h2 { margin: 0 0 8px; font-size: 16px; }
+.naslov-kategorije {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pridusen);
+}
 .kazalo-plosce {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

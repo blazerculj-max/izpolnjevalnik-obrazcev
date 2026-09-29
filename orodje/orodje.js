@@ -141,20 +141,62 @@
     return bajti;
   }
 
+  /**
+   * Obrazci po kategorijah. Ključ je začetek imena datoteke; kar ni na
+   * seznamu, pade v zadnjo kategorijo, zato nov obrazec nikoli ne izgine.
+   */
+  const KATEGORIJE = [
+    {
+      naslov: "Zdravstvena zavarovanja",
+      datoteke: [
+        "Obrazec-Opredelitev zahtev in potreb stranke_aktivno.pdf",
+        "Ponudba-individualna-skupna.pdf",
+        "Sprememba-podatkov-zdravstvenih-zavarovanj.pdf",
+      ],
+    },
+    {
+      naslov: "Prijava nezgode ali bolezni",
+      datoteke: [
+        "Prijava-nezgode-iz-zavarovanja-otrok-in-mladih.pdf",
+        "Prijava-nezgode.pdf",
+        "Prijava-zavarovalnega-primera-hujša-bolezen-poškodba.pdf",
+      ],
+    },
+    { naslov: "Ostalo", datoteke: null },
+  ];
+
+  /** Razvrsti obrazce po kategorijah; prazne kategorije izpusti. */
+  function poKategorijah(obrazci) {
+    const razvrsceni = new Set(
+      KATEGORIJE.flatMap((k) => k.datoteke || [])
+    );
+    return KATEGORIJE.map((k) => ({
+      naslov: k.naslov,
+      obrazci: k.datoteke
+        ? k.datoteke
+            .map((d) => obrazci.find((o) => o.datoteka === d))
+            .filter(Boolean)
+        : obrazci.filter((o) => !razvrsceni.has(o.datoteka)),
+    })).filter((k) => k.obrazci.length);
+  }
+
   function izrisiKazalo(obrazci) {
-    kazaloEl.innerHTML = `<h2>Obrazci</h2>
-      <div class="kazalo-plosce">${obrazci
-        .map(
-          (o) => `<button type="button" class="plosca-obrazca" data-datoteka="${escapeHtml(
-            o.datoteka
-          )}">
+    const plosca = (o) =>
+      `<button type="button" class="plosca-obrazca" data-datoteka="${escapeHtml(
+        o.datoteka
+      )}">
             <strong>${escapeHtml(o.ime)}</strong>
             <span>${o.strani} ${o.strani === 1 ? "stran" : "strani"} · ${
-            o.stevilo_polj
-          } polj</span>
-          </button>`
-        )
-        .join("")}</div>`;
+        o.stevilo_polj
+      } polj</span>
+          </button>`;
+
+    kazaloEl.innerHTML = `<h2>Obrazci</h2>${poKategorijah(obrazci)
+      .map(
+        (k) => `<h3 class="naslov-kategorije">${escapeHtml(k.naslov)}</h3>
+      <div class="kazalo-plosce">${k.obrazci.map(plosca).join("")}</div>`
+      )
+      .join("")}`;
     kazaloEl.classList.remove("skrit");
     kazaloEl.querySelectorAll("[data-datoteka]").forEach((b) =>
       b.addEventListener("click", () => odpriIzKazala(b.dataset.datoteka))
