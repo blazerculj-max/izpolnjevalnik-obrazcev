@@ -227,9 +227,16 @@
     const pas = pasVrstice(polje, vsaPolja);
     // Besedilo robnega stolpca je naslov razdelka, ne oznaka polja.
     const rob = stran ? robSekcije(stran) : null;
+    // Naslov razdelka je ob robu natisnjen z VEČJO pisavo. Kar je ob robu
+    // napisano z navadno pisavo, ni naslov, ampak napis polja, ki stoji ob
+    // njem ("kraj in datum" levo od polja pod izjavo v Ponudbi).
+    const telo = stran ? telesnaVisinaPisave(stran.kosi) : null;
+    const jeNaslovObRobu = (o) =>
+      !telo || !o.visina || o.visina > telo + NAJMANJSI_PRIRASTEK_PISAVE;
+
     const vPasu = odseki.filter(
       (o) =>
-        (rob === null || o.od >= rob) &&
+        (rob === null || o.od >= rob || !jeNaslovObRobu(o)) &&
         o.y >= pas.spodaj &&
         o.y <= pas.zgoraj &&
         // Dvočrkovni napisi so lahko povsem pravi ("IZ", "NA" v tabeli
