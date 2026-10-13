@@ -557,8 +557,12 @@
           } else if (tip === "Dropdown" || tip === "OptionList") {
             polje.select(String(vrednost));
           } else {
-            if (pisava) polje.updateAppearances(pisava);
+            // Videz NAJPREJ ne osvežujemo: pdf-lib bi ob praznem polju
+            // izračunal velikost pisave po višini okenca (12 pt) in jo
+            // zapisal v /DA. Pozneje bi jo imel za predpisano in besedila
+            // ne bi več pomanjšal - datum bi gledal čez rob celice.
             polje.setText(String(vrednost));
+            if (pisava) omejiPomanjsanje(polje, String(vrednost), pisava, opozorila);
           }
         } catch (e) {
           opozorila.push(`Polja "${ime}" ni bilo mogoče izpolniti: ${e.message}`);
@@ -700,6 +704,35 @@
     }
 
     /** Nastavi večokenčno potrditveno polje na izbrano možnost. */
+    /**
+     * Pri dolgem besedilu pdf-lib pisavo pomanjša, dokler se ne prilega
+     * okencu - tudi na tri točke, kar je na tisku neberljivo. Pod to mejo
+     * raje pustimo pisavo pri NAJMANJSA_PISAVA; besedilo takrat gleda čez
+     * rob okenca, kar se vidi, in na to opozorimo.
+     */
+    const NAJMANJSA_PISAVA = 6; // pt
+    const ODMIK_V_OKENCU = 4; // pt - rob in odmik, kot ju šteje pdf-lib
+
+    function omejiPomanjsanje(polje, besedilo, pisava, opozorila) {
+      try {
+        if (polje.isMultiline() || polje.isCombed()) return;
+        const widget = polje.acroField.getWidgets()[0];
+        if (!widget) return;
+        const naVoljo = Math.abs(widget.getRectangle().width) - ODMIK_V_OKENCU;
+        if (naVoljo <= 0) return;
+        if (pisava.widthOfTextAtSize(besedilo, NAJMANJSA_PISAVA) <= naVoljo)
+          return;
+        polje.acroField.setDefaultAppearance(
+          `/${pisava.name} ${NAJMANJSA_PISAVA} Tf 0 g`
+        );
+        opozorila.push(
+          `Besedilo v polju "${polje.getName()}" je predolgo za okence na obrazcu in bo segalo čezenj.`
+        );
+      } catch {
+        /* velikost pisave ni ključna za izvoz */
+      }
+    }
+
     /**
      * Obrne pravokotnike okvirjev, ki so zapisani "narobe obrnjeno".
      *
