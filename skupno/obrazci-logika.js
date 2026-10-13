@@ -39,7 +39,7 @@
   // ki ga vidita dve okenci hkrati (glej oznakaMoznosti).
   const NAJVEC_VRZEL_OZNAKE = 14;
   // Predlog sam po sebi ni napis polja; dopolni ga beseda za poljem.
-  const JE_PREDLOG = /^(ob|od|do|v|na|pri|za|z|s|k|po)$/i;
+  const JE_PREDLOG = /^(ob|od|do|iz|v|na|pri|za|z|s|k|po)$/i;
   const NAJVEC_ZAMIK_NAPISA_V_POLJU = 8; // pt od levega roba polja
   const DOPUST_ROBA_NAPISA = 4; // pt - napis sme segati malo čez levi rob
   const DELEZ_VRHA_POLJA = 0.45; // napis stoji v zgornjem delu polja
@@ -140,9 +140,12 @@
    * okence dobi tuj privesek, polje ob njem pa ostane brez imena.
    */
   function razreziNaPoljih(odseki, polja, celice) {
-    const okvirji = polja
-      .filter((p) => p.pravokotnik)
-      .map((p) => p.pravokotnik);
+    // Večokenčno polje (izbira) ima svoje okvirje v okencih; rezati moramo
+    // ob vsakem, sicer se napisa dveh možnosti zlepita ("Varčevanje Drugo").
+    const okvirji = polja.flatMap((p) => [
+      ...(p.pravokotnik ? [p.pravokotnik] : []),
+      ...(p.okenca || []).map((o) => o.pravokotnik).filter(Boolean),
+    ]);
     // Celice, ki jih obrazec nariše, povedo, kje se ena rubrika konča in
     // druga začne. Predolge in prekratke poti niso celice.
     const robovi = (celice || []).filter(
@@ -251,6 +254,8 @@
         // sprememb); zavrnemo le samo ločila.
         o.besedilo.length >= 2 &&
         /[a-zčšž0-9]/i.test(o.besedilo) &&
+        // Opomba pod črto ("2)", "3)") ni napis polja.
+        !/^\d{1,2}\s*\)$/.test(o.besedilo.trim()) &&
         !GLAVE.test(o.besedilo)
     );
 
@@ -338,7 +343,7 @@
         const vVrstici = kandidati.filter((o) => Math.abs(o.y - sidro.y) < 3);
         const zacetek = vVrstici.reduce((a, b) => (b.od < a.od ? b : a), sidro);
         if (zacetek !== sidro && zacetek.besedilo.length > 3) {
-          besedilo = zacetek.besedilo + " — " + besedilo;
+          besedilo = pocisti(zacetek.besedilo) + " — " + besedilo;
         }
       }
       return {
@@ -614,6 +619,7 @@
   // "ime in priimek ter podpis zakonitega zastopnika" meri 47 znakov, zato je
   // meja za odstavek nekoliko višja od najdaljšega znanega napisa.
   const NAJVEC_ZNAKOV_PODPISA = 60;
+  const JE_NAPIS_PODPISA = /^(podpis|ime\b|imena\b|šifra|sifra)/i;
   const VRZEL_VRSTICE_TABELE = 4; // pt - zaokroževanje y v vrstico tabele
   const NAJMANJSA_SIRINA_PODPISA = 25; // pt - ožje od tega ni celica za podpis
 
@@ -729,6 +735,10 @@
         if (!/\bpodpis\b/i.test(t)) continue;
         if (t.length > NAJVEC_ZNAKOV_PODPISA) continue; // odstavek, ne napis polja
         if (/\bs podpisom\b|podpisane|podpisani/i.test(t)) continue;
+        // Napis mesta za podpis se ZAČNE s "podpis", "ime in priimek" ali
+        // "šifra"; stavek, ki podpis le omenja ("... je potreben podpis
+        // plačnika premije"), ni mesto za podpis.
+        if (!JE_NAPIS_PODPISA.test(t.trim())) continue;
 
         const okvir = najdiOkvirNapisa(s.okvirji, o);
         // Sam "Podpis" brez okvira je naslov stolpca tabele; mesta so v
@@ -1317,7 +1327,17 @@
    * drobce povedi; take raje zavrnemo in obdržimo ime polja, ki je pri teh
    * obrazcih povedno ("Datum rojstva").
    */
+  const NAJVEC_ZNAKOV_S_PREDLOGOM = 90;
   function napisJeOznaka(napis) {
+    // "Sprememba zavarovalne premije osnovnega zavarovanja iz" se konča s
+    // predlogom: stavek dopolni prav vrednost polja, zato je to njegov
+    // napis, četudi je daljši od običajnega.
+    if (
+      JE_PREDLOG.test(napis.trim().split(/\s+/).pop().replace(/\W+$/, "")) &&
+      napis.length <= NAJVEC_ZNAKOV_S_PREDLOGOM
+    ) {
+      return true;
+    }
     if (napis.length > 50) return false;
     if (napis.includes("*")) return false; // opomba k obveznemu polju
 
@@ -2428,7 +2448,7 @@
     return (
       // "Check box-paket1", "Rubrika6-a": ime se začne z vrsto polja ali z
       // besedo "rubrika", za njo pa je le zaporedna oznaka.
-      /^(check ?box|text ?field|radio ?button|group|button|polje|field|untitled|rubrika)(?![a-zčšž])/i.test(
+      /^(check ?box|text ?field|radio ?button|group|button|polje|field|untitled|rubrika|izbira)(?![a-zčšž])/i.test(
         String(ime || "").trim()
       ) ||
       /^\d+$/.test(String(ime || "").trim())
