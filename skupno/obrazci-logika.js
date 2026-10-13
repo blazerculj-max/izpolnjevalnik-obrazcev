@@ -40,6 +40,8 @@
   const NAJVEC_VRZEL_OZNAKE = 14;
   // Predlog sam po sebi ni napis polja; dopolni ga beseda za poljem.
   const JE_PREDLOG = /^(ob|od|do|iz|v|na|pri|za|z|s|k|po)$/i;
+  // Napis v polju, ki pove le vrsto vrednosti, ne pa, za kaj gre.
+  const JE_SPLOSEN_NAPIS = /^(znesek|odstotek|vrednost)$/i;
   const NAJVEC_ZAMIK_NAPISA_V_POLJU = 8; // pt od levega roba polja
   const DOPUST_ROBA_NAPISA = 4; // pt - napis sme segati malo čez levi rob
   const DELEZ_VRHA_POLJA = 0.45; // napis stoji v zgornjem delu polja
@@ -270,7 +272,17 @@
         o.y >= r.y + r.height * DELEZ_VRHA_POLJA &&
         o.y <= r.y + r.height + 1
     );
-    if (vPolju && napisJeOznaka(pocistiNapis(vPolju.besedilo))) {
+    // Splošen napis v polju ("ZNESEK", "ODSTOTEK") pove le, kaj vpišemo,
+    // ne pa česa: to stoji levo v isti vrstici ("Renta", "Bonificirana
+    // zavarovalna vsota"). Takrat ju združimo, sicer bi se osem zneskov
+    // imenovalo enako.
+    const splosnoVPolju =
+      vPolju && JE_SPLOSEN_NAPIS.test(pocisti(vPolju.besedilo)) ? vPolju : null;
+    if (
+      vPolju &&
+      !splosnoVPolju &&
+      napisJeOznaka(pocistiNapis(vPolju.besedilo))
+    ) {
       return vPolju.besedilo;
     }
 
@@ -348,6 +360,7 @@
       }
       return {
         besedilo,
+        y: sidro.y,
         od: sidro.od,
         do: Math.max(...stolpec.map((o) => o.do)),
         vrzel: vrzelDo(sidro),
@@ -399,6 +412,50 @@
       if (!prva || !/^[a-zčšž]/.test(prva)) return l.besedilo;
       return golo + " " + prva;
     };
+
+    // Splošen napis je lahko tudi tik PRED poljem ("ZNESEK [____] €").
+    const splosno =
+      splosnoVPolju ||
+      (levo && JE_SPLOSEN_NAPIS.test(pocisti(levo.besedilo)) ? levo : null);
+    if (splosno) {
+      const yNapisa = splosno.y;
+      const mejaLevo = splosno === levo ? levo.od : r.x;
+      // Napis vrstice stoji levo od splošnega, v isti vrstici celice; lahko
+      // je prelomljen ("OSNOVNA / KAPITALIZIRANA" / "ZAVAROVALNA VSOTA").
+      const prvi = vPasu
+        .filter(
+          (o) =>
+            o.do <= mejaLevo + 1 &&
+            !JE_SPLOSEN_NAPIS.test(pocisti(o.besedilo)) &&
+            Math.abs(o.y - yNapisa) < 3
+        )
+        .sort((a, b) => b.do - a.do)[0];
+      // Če med tem napisom in nami stoji drugo polje, je napis njegov
+      // ("Številka zavarovanja [____]  ZNESEK [____] €"); v vmesniku sta
+      // polji tako ali tako v isti vrstici, zato zadošča "Znesek".
+      const vmesno =
+        prvi &&
+        vsaPolja.some(
+          (d) =>
+            d !== polje &&
+            d.stran === polje.stran &&
+            d.pravokotnik &&
+            Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 10 &&
+            d.pravokotnik.x >= prvi.do - 2 &&
+            d.pravokotnik.x + d.pravokotnik.width <= mejaLevo + 2
+        );
+      if (!prvi || vmesno) return splosno.besedilo;
+      const vrstice = vPasu
+        .filter(
+          (o) =>
+            Math.abs(o.od - prvi.od) < 2 &&
+            o.y <= prvi.y &&
+            prvi.y - o.y <= VRZEL_VRSTIC_GLAVE
+        )
+        .sort((a, b) => b.y - a.y);
+      const vrstica = pocisti(vrstice.map((o) => o.besedilo).join(" "));
+      return `${vrstica} — ${pocisti(splosno.besedilo).toLowerCase()}`;
+    }
 
     // V tabeli napis polja ni ne levo ne desno od njega, ampak NAD njim, v
     // glavi stolpca. Besedilo levo je oznaka VRSTICE ("Zavarovana oseba"),
