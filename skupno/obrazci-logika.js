@@ -1340,7 +1340,8 @@
     // Desno od polja stoji ali enota ali - pogosteje - oznaka NASLEDNJEGA
     // polja. Ločimo ju tako, da priznamo le znane enote; vse drugo pustimo
     // tistemu polju, ki mu pripada.
-    const ujem = desni.besedilo.match(/^(LET|EUR|KG|CM|MM|%)\b\s*(.*)$/);
+    // Za "%" ni meje besede, zato je \b tam ne bi ujel - dovolimo tudi konec.
+    const ujem = desni.besedilo.match(/^(LET|EUR|€|KG|CM|MM|%)(?:\b|$)\s*(.*)$/i);
     if (!ujem) return null;
     return { enota: ujem[1], pripomba: pocisti(ujem[2]) || null };
   }
@@ -1388,10 +1389,14 @@
   // Tabelo prepoznamo po tem, da ima vrstica VEČ polj in da nad njimi stoji
   // blok besedila, ki pokriva vsaj tri od njih. Posamezen napis nad enim
   // samim poljem ("Podatki o nezgodi:") tako ne velja za glavo.
+  // "EUR", "%", "LET" za poljem niso napis polja, ampak enota.
+  const JE_ENOTA = /^(LET|EUR|€|KG|CM|MM|%)\b/i;
   const NAJMANJ_POLJ_V_VRSTI = 3;
   const NAJMANJ_GLAV_V_VRSTI = 3;
   const NAJVEC_ODMIK_GLAVE_TABELE = 250; // pt navzgor do glave tabele
-  const VRZEL_VRSTIC_GLAVE = 14; // pt - prelomljena glava ("Datum" / "rojstva")
+  // Prelomljena glava ("Datum" / "rojstva") je od svoje prve vrstice
+  // oddaljena 4-9 pt; večja vrzel pomeni že drugo besedilo nad tabelo.
+  const VRZEL_VRSTIC_GLAVE = 10; // pt
 
   /** Polja, ki stojijo v isti vrstici kot dano polje (vključno z njim). */
   function poljaVVrsti(polje, vsaPolja) {
@@ -1476,6 +1481,7 @@
         o.besedilo.length >= 2 &&
         /[a-zčšž0-9]/i.test(o.besedilo) &&
         !leziVPolju(o, vsaPolja, polje.stran) &&
+        !JE_ENOTA.test(o.besedilo) &&
         vVrsti.some(
           (d) => o.do <= d.pravokotnik.x && d.pravokotnik.x - o.do <= NAJVEC_VRZEL_OZNAKE
         )
@@ -1515,7 +1521,7 @@
   function glavaStolpcaTabele(odseki, polje, vsaPolja) {
     const vVrsti = poljaVVrsti(polje, vsaPolja);
     if (vVrsti.length < NAJMANJ_POLJ_V_VRSTI) return null;
-    if (!imaPonovljeneVrstice(polje, vsaPolja, vVrsti)) return null;
+    const vecVrstic = imaPonovljeneVrstice(polje, vsaPolja, vVrsti);
     if (vrsticaImaSvojeNapise(odseki, polje, vsaPolja, vVrsti)) return null;
     const vrh = Math.max(
       ...vVrsti.map((d) => d.pravokotnik.y + d.pravokotnik.height)
@@ -1551,6 +1557,9 @@
         blok.vrstice.some((o) => zacneStolpec(o, d.pravokotnik))
       );
       if (pokrita.length < NAJMANJ_GLAV_V_VRSTI) continue;
+      // Ena sama vrstica polj je tabela le, če ima glavo VSAK njen stolpec;
+      // pri delnem ujemanju gre za navadno besedilo nad poljem.
+      if (!vecVrstic && pokrita.length < vVrsti.length) continue;
       // Tudi naše polje mora imeti glavo, poravnano s svojim stolpcem;
       // sicer gre za besedilo, ki le sega čez njegov stolpec.
       if (!blok.vrstice.some((o) => zacneStolpec(o, polje.pravokotnik)))
@@ -1567,13 +1576,36 @@
     return null;
   }
 
+  // Oznaka vrstice stoji v prvem stolpcu, torej tik pred prvim poljem;
+  // odstavek daleč levo je besedilo rubrike, ne oznaka vrstice.
+  const NAJVEC_VRZEL_OZNAKE_VRSTICE = 35; // pt vodoravno do prvega polja
+  const VRZEL_ODSTAVKA = 12; // pt - bliže od tega je nadaljevanje odstavka
+  const NAJVEC_ODMIK_OZNAKE_VRSTICE = 14; // pt navpično: osnovnica je niže
   /** Napis, ki stoji levo od CELE vrstice tabele ("Zavarovana oseba"). */
   function oznakaVrsticeTabele(vPasu, polje, vsaPolja, cy) {
     const najboljLevo = Math.min(
       ...poljaVVrsti(polje, vsaPolja).map((d) => d.pravokotnik.x)
     );
+    // Zadnja vrstica odstavka ni oznaka vrstice: nad njo stoji z istim
+    // levim robom njeno nadaljevanje ("... stanja iz »Vprašalnika o" nad
+    // "zdravstvenem stanju«" v Ponudbi).
+    const jeNadaljevanje = (o) =>
+      vPasu.some(
+        (d) =>
+          d !== o &&
+          Math.abs(d.od - o.od) < 2 &&
+          d.y > o.y &&
+          d.y - o.y <= VRZEL_ODSTAVKA
+      );
+
     const kandidat = vPasu
-      .filter((o) => o.do <= najboljLevo && Math.abs(o.y - cy) < VRZEL_VRSTIC_GLAVE)
+      .filter(
+        (o) =>
+          o.do <= najboljLevo &&
+          najboljLevo - o.do <= NAJVEC_VRZEL_OZNAKE_VRSTICE &&
+          Math.abs(o.y - cy) < NAJVEC_ODMIK_OZNAKE_VRSTICE &&
+          !jeNadaljevanje(o)
+      )
       .sort((a, b) => b.do - a.do)[0];
     return kandidat ? pocisti(kandidat.besedilo) : null;
   }
