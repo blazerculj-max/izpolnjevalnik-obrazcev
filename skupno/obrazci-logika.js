@@ -1102,7 +1102,47 @@
     const glava = najdiGlavoStolpca(stran.kosi, r.x + r.width / 2, cy);
     if (glava) return { oznaka: glava, izGlave: true };
 
+    // Nekateri obrazci napis možnosti natisnejo PRED okence ("Paket 1* ☒",
+    // "Paket 2** ☐" v rubriki o delovni nezmožnosti).
+    const levo = oznakaLevoOdOkenca(stran.kosi, r, vsaOkenca, okence);
+    if (levo) return { oznaka: levo, izGlave: false };
+
     return { oznaka: String(okence.vklop || "").toUpperCase(), izGlave: false };
+  }
+
+  const NAJVEC_VRZEL_OZNAKE_LEVO = 20; // pt
+  /** Besedilo tik pred okencem v isti vrstici; null, če ga ni. */
+  function oznakaLevoOdOkenca(kosi, r, vsaOkenca, okence) {
+    const cy = r.y + r.height / 2;
+    // Meja je najbližje okence iste izbire na levi.
+    const mejaLevo = vsaOkenca
+      .filter(
+        (o) =>
+          o !== okence &&
+          o.pravokotnik &&
+          Math.abs(o.pravokotnik.y + o.pravokotnik.height / 2 - cy) < 6 &&
+          o.pravokotnik.x + o.pravokotnik.width < r.x
+      )
+      .reduce((n, o) => Math.max(n, o.pravokotnik.x + o.pravokotnik.width), -Infinity);
+
+    const vrsta = kosi
+      .filter((k) => Math.abs(k.y - cy) < 6 && k.x + k.w <= r.x + 2 && k.x > mejaLevo)
+      .sort((a, b) => a.x - b.x);
+    if (!vrsta.length) return null;
+    const zadnji = vrsta[vrsta.length - 1];
+    // Napis PRED okencem stoji nekoliko dlje od njega kot napis za njim
+    // (izmerjeno 18 pt pri "Paket 1* ☒").
+    if (r.x - (zadnji.x + zadnji.w) > NAJVEC_VRZEL_OZNAKE_LEVO) return null;
+
+    // Poberemo besede, ki se zadnjega tesno držijo.
+    const izbrani = [zadnji];
+    for (let i = vrsta.length - 2; i >= 0; i--) {
+      const naslednji = izbrani[izbrani.length - 1];
+      if (naslednji.x - (vrsta[i].x + vrsta[i].w) > NAJVEC_VRZEL_MED_BESEDAMA) break;
+      izbrani.push(vrsta[i]);
+    }
+    const besedilo = pocisti(sestaviOdsek(izbrani.reverse()).besedilo);
+    return besedilo && napisJeOznaka(besedilo) ? besedilo : null;
   }
 
   /**
@@ -1202,6 +1242,23 @@
    * Vprašanja v vprašalniku o zdravstvenem stanju merijo do 170 znakov in
    * povedo bistveno več kot ime polja ("Bolezen", "NE prom.nesreča").
    */
+  /** Oštevilčena trditev ali vprašanje brez vprašaja - nanje polje odgovarja. */
+  function jeTrditevObrazca(napis) {
+    const t = String(napis || "").trim();
+    return /^\d+\s*\.\s+\S/.test(t) || /^ali\s/i.test(t);
+  }
+
+  /**
+   * Trditev obrazca pogosto nadaljuje z naštevanjem ("... so: • voditelji
+   * držav, predsedniki vlad ..."). Za vprašanje zadošča del pred dvopičjem.
+   */
+  const NAJMANJ_ZNAKOV_PRED_DVOPICJEM = 40;
+  function skrajsajTrditev(napis) {
+    const t = String(napis || "").trim();
+    const kje = t.indexOf(":");
+    return kje >= NAJMANJ_ZNAKOV_PRED_DVOPICJEM ? t.slice(0, kje).trim() : t;
+  }
+
   const NAJVEC_ZNAKOV_VPRASANJA = 200;
   function jeVprasanje(napis) {
     const t = String(napis || "").trim();
@@ -1401,27 +1458,64 @@
    * navadna vrstica in napisov ne smemo iskati nad njo. V tabeli stoji v
    * vrstici kvečjemu oznaka cele vrstice, levo od vseh polj.
    */
+  const NAJVEC_SVOJIH_NAPISOV = 1; // več kot toliko pomeni: vrstica ni tabela
   function vrsticaImaSvojeNapise(odseki, polje, vsaPolja, vVrsti) {
     const najboljLevo = Math.min(...vVrsti.map((d) => d.pravokotnik.x));
     const vrh = Math.max(
       ...vVrsti.map((d) => d.pravokotnik.y + d.pravokotnik.height)
     );
     const dno = Math.min(...vVrsti.map((d) => d.pravokotnik.y));
-    return odseki.some(
+    // Šteje le besedilo, ki stoji TIK PRED kakšnim poljem vrstice - tak je
+    // napis polja. Natisnjena vrednost v celici ("NE" v stolpcu DPZP) ali
+    // oznaka vrstice pred vsemi polji sta nekaj drugega.
+    const napisi = odseki.filter(
       (o) =>
         o.y >= dno &&
         o.y <= vrh &&
         o.od > najboljLevo &&
         o.besedilo.length >= 2 &&
         /[a-zčšž0-9]/i.test(o.besedilo) &&
-        !leziVPolju(o, vsaPolja, polje.stran)
+        !leziVPolju(o, vsaPolja, polje.stran) &&
+        vVrsti.some(
+          (d) => o.do <= d.pravokotnik.x && d.pravokotnik.x - o.do <= NAJVEC_VRZEL_OZNAKE
+        )
     );
+    return napisi.length > NAJVEC_SVOJIH_NAPISOV;
+  }
+
+  /**
+   * Tabela ima VEČ vrstic z istimi stolpci.
+   * Ena sama vrstica polj ni tabela; besedilo nad njo je navaden odstavek,
+   * ki se s stolpci ujame po naključju (dolga poved ima besede povsod).
+   */
+  const NAJMANJ_UJEMAJOCIH_STOLPCEV = 3;
+  const DOPUST_STOLPCA = 2; // pt
+  function imaPonovljeneVrstice(polje, vsaPolja, vVrsti) {
+    const cy = polje.pravokotnik.y + polje.pravokotnik.height / 2;
+    const stolpci = vVrsti.map((d) => d.pravokotnik.x);
+    const druge = new Map();
+    vsaPolja.forEach((d) => {
+      if (d.stran !== polje.stran || !d.pravokotnik) return;
+      const dcy = d.pravokotnik.y + d.pravokotnik.height / 2;
+      if (Math.abs(dcy - cy) < 3) return;
+      const kljuc = Math.round(dcy);
+      if (!druge.has(kljuc)) druge.set(kljuc, []);
+      druge.get(kljuc).push(d.pravokotnik.x);
+    });
+    for (const xs of druge.values()) {
+      const ujemanj = stolpci.filter((x) =>
+        xs.some((o) => Math.abs(o - x) < DOPUST_STOLPCA)
+      ).length;
+      if (ujemanj >= NAJMANJ_UJEMAJOCIH_STOLPCEV) return true;
+    }
+    return false;
   }
 
   /** Napis iz glave stolpca, v katerem stoji polje; null, če to ni tabela. */
   function glavaStolpcaTabele(odseki, polje, vsaPolja) {
     const vVrsti = poljaVVrsti(polje, vsaPolja);
     if (vVrsti.length < NAJMANJ_POLJ_V_VRSTI) return null;
+    if (!imaPonovljeneVrstice(polje, vsaPolja, vVrsti)) return null;
     if (vrsticaImaSvojeNapise(odseki, polje, vsaPolja, vVrsti)) return null;
     const vrh = Math.max(
       ...vVrsti.map((d) => d.pravokotnik.y + d.pravokotnik.height)
@@ -1652,17 +1746,31 @@
       // Strojno ime ("sam-izbira-4-1") ne pove nič; takrat naj govorijo
       // same možnosti, vprašanja pa ni.
       const imeJeStrojno = /^[a-zčšž0-9]+([_\-=.][a-zčšž0-9]*)+$/i.test(polje.ime);
+      // Oznaka rubrike ("5", "7.a") ni vprašanje; možnosti same povedo,
+      // za kaj gre, naslov razdelka pa to že ponovi.
+      if (/^\d+\s*\.?\s*[a-zčšž]?$/i.test(izVrstice)) izVrstice = "";
+      // Oštevilčena trditev ("1. Politično izpostavljene ...") in vprašanje
+      // brez vprašaja ("Ali ste državljan ZDA ...:") sta tisto, na kar
+      // polje odgovarja; ime polja ("politicno1", "zda") je le interna
+      // oznaka in ju ne sme prevladati, pa naj bosta še tako dolga.
+      const izPdfJeTrditev = Boolean(izVrstice) && !jeMoznost && jeTrditevObrazca(izVrstice);
       // Vprašanje z obrazca ("Ali se je nezgoda zgodila v prometni
       // nesreči?") pove več kot ime polja ("NE prom.nesreča").
-      const vprasanje = jeVprasanje(izVrstice)
-        ? izVrstice
-        : imeJeStrojno
-        ? !jeMoznost && izVrstice && stevBesed(izVrstice) >= 2 && napisJeOznaka(izVrstice)
-          ? izVrstice
-          : null
-        : imeJePovedno || !izVrstice || jeMoznost
-          ? imeBrezStevilke
-          : izVrstice;
+      let vprasanje;
+      if (jeVprasanje(izVrstice) || izPdfJeTrditev) {
+        vprasanje = izPdfJeTrditev ? skrajsajTrditev(izVrstice) : izVrstice;
+      } else if (!imeJePovedno) {
+        // "Rubrika4", "Checkbox7": ime ne pove nič, zato govori obrazec -
+        // in če tudi ta molči ali le ponovi eno od možnosti, vprašanja ni.
+        vprasanje = (!jeMoznost && izVrstice) || null;
+      } else if (imeJeStrojno) {
+        vprasanje =
+          !jeMoznost && izVrstice && stevBesed(izVrstice) >= 2 && napisJeOznaka(izVrstice)
+            ? izVrstice
+            : null;
+      } else {
+        vprasanje = !izVrstice || jeMoznost ? imeBrezStevilke : imeBrezStevilke;
+      }
 
       // Pojasnilo dodamo le, če je cel stavek - kratki drobci ob polju so
       // pogosto oznaka SOSEDNJEGA polja in bi zavajali.
@@ -1671,6 +1779,9 @@
         !jeMoznost &&
         vprasanje &&
         !jeIsto(izVrstice, vprasanje) &&
+        // Kadar je vprašanje le skrajšan začetek tega besedila, bi ga
+        // pojasnilo samo ponovilo.
+        !izVrstice.startsWith(vprasanje) &&
         izVrstice.length > 20
           ? izVrstice
           : null;
@@ -2268,8 +2379,10 @@
     // "4", "5", "6" so v prilogah imena okenc - povedo prav toliko kot
     // "Checkbox7".
     return (
-      /^(check ?box|text ?field|radio ?button|group|button|polje|field|untitled)\s*\d*$/i.test(
-        ime
+      // "Check box-paket1", "Rubrika6-a": ime se začne z vrsto polja ali z
+      // besedo "rubrika", za njo pa je le zaporedna oznaka.
+      /^(check ?box|text ?field|radio ?button|group|button|polje|field|untitled|rubrika)(?![a-zčšž])/i.test(
+        String(ime || "").trim()
       ) ||
       /^\d+$/.test(String(ime || "").trim())
     );
