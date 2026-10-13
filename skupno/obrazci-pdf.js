@@ -232,7 +232,7 @@
             ? logika.pocistiNapis(najdeno.oznaka)
             : null;
           p.glava = najdeno.glava || null;
-          p.oznaka = najdeno.izUvoda
+          p.oznaka = najdeno.koncna
             ? najdeno.oznaka
             : logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
           if (najdeno.desno) {
@@ -268,7 +268,7 @@
               ? logika.pocistiNapis(najdeno.oznaka)
               : null;
             p.glava = najdeno.glava || null;
-            p.oznaka = najdeno.izUvoda
+            p.oznaka = najdeno.koncna
             ? najdeno.oznaka
             : logika.izberiOznako(p.ime, najdeno.oznaka, p.tip);
             p.enota = najdeno.desno ? najdeno.desno.enota || null : null;

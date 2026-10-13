@@ -387,6 +387,16 @@
       return golo + " " + prva;
     };
 
+    // V tabeli napis polja ni ne levo ne desno od njega, ampak NAD njim, v
+    // glavi stolpca. Besedilo levo je oznaka VRSTICE ("Zavarovana oseba"),
+    // ne polja, zato si ga sicer vzame vsako polje v vrstici, napis soseda
+    // pa se zamakne za en stolpec.
+    const glava = glavaStolpcaTabele(odseki, polje, vsaPolja);
+    if (glava) {
+      const oznakaVrstice = oznakaVrsticeTabele(vPasu, polje, vsaPolja, cy);
+      return oznakaVrstice ? `${oznakaVrstice} — ${glava}` : glava;
+    }
+
     if (!levo) return desno ? desno.besedilo : null;
     if (!desno) return levo.besedilo;
 
@@ -461,10 +471,15 @@
         meje ? meje.get(polje.stran) : null
       );
       const zUvodom = dopolniZUvodom(osnovna, polje, stran, polja);
+      // Napis, ki smo ga sestavili sami - vprašanje nad poljem ali
+      // "vrstica — stolpec" iz glave tabele - je dokončen, tudi kadar je
+      // dolg; izberiOznako ga ne sme zavrniti in nadomestiti z imenom polja.
+      const glavaTabele = glavaStolpcaTabele(odseki, polje, polja);
       oznake.set(polje.ime, {
         oznaka: zUvodom,
-        // Vprašanje nad poljem je napis, tudi kadar je dolg.
-        izUvoda: zUvodom !== osnovna,
+        koncna:
+          zUvodom !== osnovna ||
+          Boolean(glavaTabele && String(zUvodom || "").endsWith(glavaTabele)),
         desno: polje.tip === "TextField" ? najdiDesnoPripombo(odseki, polje) : null,
         glava:
           polje.tip === "CheckBox"
@@ -1312,6 +1327,163 @@
     return naslov.length > 0 && naslov.length <= NAJVEC_ZNAKOV_NASLOVA;
   }
 
+  // --- glava stolpca v tabeli ---------------------------------------------
+  // Tabelo prepoznamo po tem, da ima vrstica VEČ polj in da nad njimi stoji
+  // blok besedila, ki pokriva vsaj tri od njih. Posamezen napis nad enim
+  // samim poljem ("Podatki o nezgodi:") tako ne velja za glavo.
+  const NAJMANJ_POLJ_V_VRSTI = 3;
+  const NAJMANJ_GLAV_V_VRSTI = 3;
+  const NAJVEC_ODMIK_GLAVE_TABELE = 250; // pt navzgor do glave tabele
+  const VRZEL_VRSTIC_GLAVE = 14; // pt - prelomljena glava ("Datum" / "rojstva")
+
+  /** Polja, ki stojijo v isti vrstici kot dano polje (vključno z njim). */
+  function poljaVVrsti(polje, vsaPolja) {
+    const cy = polje.pravokotnik.y + polje.pravokotnik.height / 2;
+    return vsaPolja.filter(
+      (d) =>
+        d.stran === polje.stran &&
+        d.pravokotnik &&
+        Math.abs(d.pravokotnik.y + d.pravokotnik.height / 2 - cy) < 3
+    );
+  }
+
+  /** Ali odsek leži v katerem od polj? (vpisana vsebina ni glava stolpca) */
+  function leziVPolju(odsek, vsaPolja, stran) {
+    return vsaPolja.some(
+      (d) =>
+        d.stran === stran &&
+        d.pravokotnik &&
+        odsek.y >= d.pravokotnik.y &&
+        odsek.y <= d.pravokotnik.y + d.pravokotnik.height &&
+        odsek.od < d.pravokotnik.x + d.pravokotnik.width &&
+        odsek.do > d.pravokotnik.x
+    );
+  }
+
+  /**
+   * Koščki odseka, ki stojijo v stolpcu polja.
+   * Glave dveh sosednjih stolpcev so v PDF-ju pogosto en sam odsek
+   * ("Spol Davčna"), zato jih razrežemo po koščkih, ne po celem odseku.
+   */
+  function kosiVStolpcu(odsek, r) {
+    const kosi = odsek.kosi || [
+      {
+        x: odsek.od,
+        y: odsek.y,
+        w: odsek.do - odsek.od,
+        besedilo: odsek.besedilo,
+      },
+    ];
+    return kosi.filter((k) => {
+      const sredina = k.x + k.w / 2;
+      return sredina >= r.x && sredina <= r.x + r.width;
+    });
+  }
+
+  /**
+   * Ali se besedilo ZAČNE tam, kjer se začne stolpec polja?
+   * To loči pravo glavo tabele od besedila, ki je nad poljem po naključju:
+   * glave stolpcev so poravnane z levim robom svojih celic (izmerjeno do
+   * 4 pt), prosto besedilo nad poljem pa ne.
+   */
+  const DOPUST_PORAVNAVE_GLAVE = 12; // pt
+  function zacneStolpec(odsek, r) {
+    return kosiVStolpcu(odsek, r).some(
+      (k) => k.x >= r.x - DOPUST_PORAVNAVE_GLAVE / 3 &&
+        k.x <= r.x + DOPUST_PORAVNAVE_GLAVE
+    );
+  }
+
+  /**
+   * Ali ima vrstica napise kar v sebi?
+   * V Ponudbi ima vsako polje vrstice svoj napis tik ob sebi ("ulica",
+   * "hišna št.", "poštna št.", "kraj") - to ni tabela z glavo, ampak
+   * navadna vrstica in napisov ne smemo iskati nad njo. V tabeli stoji v
+   * vrstici kvečjemu oznaka cele vrstice, levo od vseh polj.
+   */
+  function vrsticaImaSvojeNapise(odseki, polje, vsaPolja, vVrsti) {
+    const najboljLevo = Math.min(...vVrsti.map((d) => d.pravokotnik.x));
+    const vrh = Math.max(
+      ...vVrsti.map((d) => d.pravokotnik.y + d.pravokotnik.height)
+    );
+    const dno = Math.min(...vVrsti.map((d) => d.pravokotnik.y));
+    return odseki.some(
+      (o) =>
+        o.y >= dno &&
+        o.y <= vrh &&
+        o.od > najboljLevo &&
+        o.besedilo.length >= 2 &&
+        /[a-zčšž0-9]/i.test(o.besedilo) &&
+        !leziVPolju(o, vsaPolja, polje.stran)
+    );
+  }
+
+  /** Napis iz glave stolpca, v katerem stoji polje; null, če to ni tabela. */
+  function glavaStolpcaTabele(odseki, polje, vsaPolja) {
+    const vVrsti = poljaVVrsti(polje, vsaPolja);
+    if (vVrsti.length < NAJMANJ_POLJ_V_VRSTI) return null;
+    if (vrsticaImaSvojeNapise(odseki, polje, vsaPolja, vVrsti)) return null;
+    const vrh = Math.max(
+      ...vVrsti.map((d) => d.pravokotnik.y + d.pravokotnik.height)
+    );
+
+    const nad = odseki
+      .filter(
+        (o) =>
+          o.y > vrh &&
+          o.y - vrh < NAJVEC_ODMIK_GLAVE_TABELE &&
+          // Črtice v praznih celicah nad vrstico niso glava stolpca.
+          o.besedilo.length >= 2 &&
+          /[a-zčšž0-9]/i.test(o.besedilo) &&
+          !leziVPolju(o, vsaPolja, polje.stran)
+      )
+      .sort((a, b) => a.y - b.y);
+    if (!nad.length) return null;
+
+    // Glava je lahko prelomljena čez dve vrstici ("Datum" / "rojstva"),
+    // zato besedilo najprej združimo v bloke sosednjih vrstic.
+    const bloki = [];
+    for (const o of nad) {
+      const zadnji = bloki[bloki.length - 1];
+      if (zadnji && o.y - zadnji.vrh <= VRZEL_VRSTIC_GLAVE) {
+        zadnji.vrstice.push(o);
+        zadnji.vrh = Math.max(zadnji.vrh, o.y);
+      } else bloki.push({ vrh: o.y, vrstice: [o] });
+    }
+
+    // Od vrstice navzgor: prvi blok, ki pokriva vsaj tri polja te vrstice.
+    for (const blok of bloki) {
+      const pokrita = vVrsti.filter((d) =>
+        blok.vrstice.some((o) => zacneStolpec(o, d.pravokotnik))
+      );
+      if (pokrita.length < NAJMANJ_GLAV_V_VRSTI) continue;
+      // Tudi naše polje mora imeti glavo, poravnano s svojim stolpcem;
+      // sicer gre za besedilo, ki le sega čez njegov stolpec.
+      if (!blok.vrstice.some((o) => zacneStolpec(o, polje.pravokotnik)))
+        return null;
+      const moji = blok.vrstice
+        .map((o) => ({ y: o.y, kosi: kosiVStolpcu(o, polje.pravokotnik) }))
+        .filter((v) => v.kosi.length)
+        .sort((a, b) => b.y - a.y);
+      if (!moji.length) return null;
+      return pocisti(
+        moji.map((v) => sestaviOdsek(v.kosi).besedilo).join(" ")
+      );
+    }
+    return null;
+  }
+
+  /** Napis, ki stoji levo od CELE vrstice tabele ("Zavarovana oseba"). */
+  function oznakaVrsticeTabele(vPasu, polje, vsaPolja, cy) {
+    const najboljLevo = Math.min(
+      ...poljaVVrsti(polje, vsaPolja).map((d) => d.pravokotnik.x)
+    );
+    const kandidat = vPasu
+      .filter((o) => o.do <= najboljLevo && Math.abs(o.y - cy) < VRZEL_VRSTIC_GLAVE)
+      .sort((a, b) => b.do - a.do)[0];
+    return kandidat ? pocisti(kandidat.besedilo) : null;
+  }
+
   /**
    * Del odseka, ki še stoji v robnem stolpcu.
    * Režemo le tam, kjer se besedilo telesa RES začne - z vrzeljo za mejo.
@@ -1445,7 +1617,14 @@
         (a, b) => a.pravokotnik.x - b.pravokotnik.x
       );
       const moznosti = okenca.map((o) => {
-        const najdeno = oznakaMoznosti(stran, o, okenca);
+        // Okenca iste izbire lahko stojijo na RAZLIČNIH straneh (v Zahtevku
+        // "Izbira paketa" na 4. in "Samostojna izbira posameznega kritja"
+        // na 5.); napis vsakega iščemo na njegovi strani.
+        const stranOkenca = strani[(o.stran || polje.stran) - 1] || stran;
+        const sosednja = okenca.filter(
+          (d) => (d.stran || polje.stran) === (o.stran || polje.stran)
+        );
+        const najdeno = oznakaMoznosti(stranOkenca, o, sosednja);
         return {
           vklop: o.vklop,
           oznaka: najdeno.oznaka,
