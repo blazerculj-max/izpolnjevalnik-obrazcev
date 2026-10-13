@@ -110,6 +110,14 @@
     let besedilo = kosi[0].besedilo;
     let konec = kosi[0].x + kosi[0].w;
     for (let i = 1; i < kosi.length; i++) {
+      // Isto besedilo na istem mestu je dvojni natis (v Ponudbi je
+      // "Plačilni nalog (E-račun)**" izrisan dvakrat čez samega sebe).
+      if (
+        kosi[i].besedilo === kosi[i - 1].besedilo &&
+        Math.abs(kosi[i].x - kosi[i - 1].x) < 1
+      ) {
+        continue;
+      }
       const locilo = kosi[i].x - konec >= VRZEL_PRESLEDKA ? " " : "";
       besedilo += locilo + kosi[i].besedilo;
       konec = kosi[i].x + kosi[i].w;
@@ -1062,6 +1070,13 @@
       // se je začelo nekaj drugega - pri Zahtevku stoji 14 pt za okencem
       // "Ne" cel odstavek o politični izpostavljenosti.
       if (vrzel > NAJVEC_VRZEL_MED_BESEDAMA) break;
+      // Dvojni natis istega besedila na istem mestu (glej sestaviOdsek).
+      if (
+        vrsta[i].besedilo === vrsta[i - 1].besedilo &&
+        Math.abs(vrsta[i].x - vrsta[i - 1].x) < 1
+      ) {
+        continue;
+      }
       besedilo += (vrzel >= VRZEL_PRESLEDKA ? " " : "") + vrsta[i].besedilo;
       konec = vrsta[i].x + vrsta[i].w;
     }

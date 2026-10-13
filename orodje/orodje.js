@@ -512,6 +512,15 @@
     const vrsticaNa = (vir) =>
       typeof vir.vrstica === "number" ? vir.vrstica : null;
 
+    // Štiri polja v vrstici gredo 2 x 2, kadar so napisi dolgi ("MESEČNA
+    // PREMIJA S POPUSTOM IN DAVKOM"): štiri taka okenca v vrsti so preozka,
+    // da bi se dalo brati, kaj sodi kam. Kratke rubrike (ulica, hišna št.,
+    // poštna št., kraj) ostanejo v eni vrsti, kot so na papirju.
+    const NAJDALJSI_KRATEK_NAPIS = 30;
+    const dvaStolpca = (v) =>
+      v.deli.length === 4 &&
+      (v.napisi || []).some((n) => n.length > NAJDALJSI_KRATEK_NAPIS);
+
     const skupine = [];
     let tekoca = null;
     let tekociSklop = null;
@@ -543,6 +552,10 @@
         tekociSklop.vrstice.push(tekocaVrstica);
       }
       tekocaVrstica.deli.push(e.html);
+      tekocaVrstica.napisi = tekocaVrstica.napisi || [];
+      tekocaVrstica.napisi.push(
+        String(e.vir.oznaka || e.vir.vprasanje || "")
+      );
     }
 
     const skupineHtml = skupine
@@ -555,7 +568,12 @@
                 (k) =>
                   (k.naslov ? `<h4 class="naslov-sklopa">${escapeHtml(k.naslov)}</h4>` : "") +
                   k.vrstice
-                    .map((v) => `<div class="mreza-polj">${v.deli.join("")}</div>`)
+                    .map(
+                      (v) =>
+                        `<div class="mreza-polj${
+                          dvaStolpca(v) ? " dva-stolpca" : ""
+                        }">${v.deli.join("")}</div>`
+                    )
                     .join("")
               )
               .join("")}
