@@ -53,6 +53,13 @@
     <style>/*{{SLOG}}*/</style>
   </head>
   <body class="orodje">
+    <script>
+      // Izbrani izgled nastavimo takoj, da stran ob odprtju ne utripne v
+      // starem. Shrani se samo ta izbira, nobenih podatkov.
+      try {
+        if (localStorage.getItem("izgled") === "nov") document.body.classList.add("izgled-nov");
+      } catch (e) {}
+    </script>
     <header>
       <div class="glava-ovoj">
         <div class="znamka">
@@ -75,6 +82,20 @@
           <a class="gumb-tih svetel skrit" id="prenesi-orodje" href="index.html"
              download="Izpolnjevalnik-obrazcev.html">Prenesi za brez povezave</a>
           <button class="gumb-tih svetel" id="izberi-datoteko">Odpri drug obrazec</button>
+          <!-- Nov izgled: redka dejanja so v meniju, da glava ostane tanka. -->
+          <details class="meni-glave samo-nov">
+            <summary class="gumb-tih svetel gumb-ikona" aria-label="Več možnosti" title="Več možnosti">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+            </summary>
+            <div class="meni-glave-seznam">
+              <button type="button" data-klikni="izberi-datoteko">Odpri svoj PDF obrazec</button>
+              <button type="button" data-klikni="prenesi-orodje">Prenesi za brez povezave</button>
+            </div>
+          </details>
+          <button class="gumb-tih svetel gumb-ikona" id="preklop-izgleda" type="button"
+                  aria-pressed="false" title="Alternativni izgled" aria-label="Alternativni izgled">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15M3.5 9.5h6"/></svg>
+          </button>
         </div>
       </div>
     </header>
@@ -85,13 +106,14 @@
       <section id="kazalo-obrazcev" class="kazalo-obrazcev skrit"></section>
 
       <div id="spustisce" class="spustisce">
-        <strong>Povleci sem PDF obrazec</strong>
-        <span>ali klikni za izbiro. Obrazec mora biti »aktiven« (z vnosnimi polji).</span>
+        <strong class="samo-star">Povleci sem PDF obrazec</strong>
+        <span class="samo-star">ali klikni za izbiro. Obrazec mora biti »aktiven« (z vnosnimi polji).</span>
+        <strong class="samo-nov">+ Odpri svoj PDF obrazec</strong>
         <input type="file" id="vnos-datoteke" accept="application/pdf,.pdf" hidden />
       </div>
 
       <section class="vsebina" id="prikaz-obrazca">
-        <p class="prazno">Izberi PDF obrazec zgoraj.</p>
+        <p class="prazno zacetno">Izberi PDF obrazec zgoraj.</p>
       </section>
 
       <p class="namig drobno">

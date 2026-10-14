@@ -193,14 +193,39 @@
 
     kazaloEl.innerHTML = `<h2>Obrazci</h2>${poKategorijah(obrazci)
       .map(
-        (k) => `<h3 class="naslov-kategorije">${escapeHtml(k.naslov)}</h3>
+        (k) => `<h3 class="naslov-kategorije">${ikonaKategorije(k.naslov)}${escapeHtml(
+          k.naslov
+        )}</h3>
       <div class="kazalo-plosce">${k.obrazci.map(plosca).join("")}</div>`
       )
       .join("")}`;
     kazaloEl.classList.remove("skrit");
     kazaloEl.querySelectorAll("[data-datoteka]").forEach((b) =>
-      b.addEventListener("click", () => odpriIzKazala(b.dataset.datoteka))
+      b.addEventListener("click", () => {
+        // V novem izgledu je obrazec svoj zaslon; vrnitev na odprti obrazec
+        // ga ne sme na novo naložiti, sicer bi se vpisano izgubilo.
+        if (
+          jeNovIzgled() &&
+          odprtObrazec &&
+          odprtObrazec.ime === b.dataset.datoteka &&
+          document.getElementById("obrazec-polja")
+        ) {
+          nastaviZaslon("obrazec");
+          return;
+        }
+        odpriIzKazala(b.dataset.datoteka);
+      })
     );
+  }
+
+  /** Majhna ikona kategorije (vidna le v novem izgledu). */
+  function ikonaKategorije(naslov) {
+    const poti = /zdravstv/i.test(naslov)
+      ? '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>'
+      : /nezgod|bolezn/i.test(naslov)
+        ? '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/>'
+        : '<path d="M7 3.5h7l4 4V20.5H6.5V3.5z"/><path d="M14 3.5V8h4"/>';
+    return `<svg class="ikona-kategorije samo-nov" viewBox="0 0 24 24" aria-hidden="true">${poti}</svg>`;
   }
 
   async function odpriIzKazala(datoteka) {
@@ -617,11 +642,14 @@
       )
       .join("");
 
+    const naslovObrazca = ime.replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
     prikaz.innerHTML = `
-      <h2>${escapeHtml(ime.replace(/\.pdf$/i, "").replace(/[-_]/g, " "))}</h2>
-      <p class="meta">${shema.polja.length} polj · ${shema.strani.length} strani ·
+      ${glavaNovegaIzgledaVHtml(naslovObrazca)}
+      <h2 class="samo-star">${escapeHtml(naslovObrazca)}</h2>
+      <p class="meta samo-star">${shema.polja.length} polj · ${shema.strani.length} strani ·
         obdelano v tvojem brskalniku</p>
       <div class="obrazec-postavitev">
+        <nav class="nov-kazalo samo-nov" aria-label="Rubrike obrazca"></nav>
         <form id="obrazec-polja" autocomplete="off">${skupineHtml}</form>
         <aside class="podpis-plosca">
           <h3>Podpisi</h3>
@@ -643,10 +671,19 @@
         </label>
         <span class="stanje" id="stanje-obrazca"></span>
       </div>
-      <div id="izhod-pdf"></div>`;
+      <div id="izhod-pdf"></div>
+      <div class="nov-spodnja samo-nov">
+        <div class="nov-napredek">
+          <div class="nov-napredek-trak"><div id="nov-napredek-polnilo"></div></div>
+          <span id="nov-napredek-besedilo"></span>
+        </div>
+        <button type="button" class="gumb-tih" id="nov-nazaj">‹ Nazaj</button>
+        <button type="button" class="gumb-glavni" id="nov-naprej">Naprej</button>
+      </div>`;
 
     document.getElementById("pripravi-pdf").addEventListener("click", pripraviPdf);
     document.getElementById("pocisti-obrazec").addEventListener("click", pocistiVse);
+    povezNovIzgled();
 
     // Klik na DA/NE velja za celo vrstico; ponoven klik odgovor prekliče.
     prikaz.querySelectorAll(".odgovor-gumb[data-vrstica]").forEach((g) =>
@@ -954,6 +991,295 @@
       .forEach((g) => g.addEventListener("click", posodobiPogoje));
     ponastaviRocnePostavitve();
   }
+
+  // ------------------------------------------------------------ nov izgled
+  // Drug videz istih polj: obrazec je svoj zaslon s tremi koraki (Izpolni -
+  // Podpiši - Izvozi), kazalom rubrik in spodnjo vrstico z napredkom. Vklopi
+  // ga ikona v glavi. Polja, podpisi in izvoz so isti kot v starem izgledu -
+  // spremeni se le, kaj je kdaj vidno - zato je izvoženi PDF enak.
+
+  const KORAKI = [
+    { id: "izpolni", oznaka: "Izpolni" },
+    { id: "podpisi", oznaka: "Podpiši" },
+    { id: "izvozi", oznaka: "Izvozi" },
+  ];
+  function jeNovIzgled() {
+    return document.body.classList.contains("izgled-nov");
+  }
+
+  function nastaviIzgled(nov) {
+    document.body.classList.toggle("izgled-nov", nov);
+    const gumb = document.getElementById("preklop-izgleda");
+    if (gumb) gumb.setAttribute("aria-pressed", String(nov));
+    // Shrani se le izbira izgleda, nobenih podatkov stranke.
+    try {
+      localStorage.setItem("izgled", nov ? "nov" : "star");
+    } catch {
+      /* v zasebnem oknu ostane izbira le do zaprtja */
+    }
+    izmeriGlavo();
+    if (nov) posodobiNovIzgled();
+  }
+
+  /** Lepljivi deli pod glavo morajo vedeti, kako visoka je. */
+  function izmeriGlavo() {
+    const glava = document.querySelector("header");
+    if (glava) {
+      document.documentElement.style.setProperty("--visina-glave", glava.offsetHeight + "px");
+    }
+  }
+
+  /** "seznam" (kartice obrazcev) ali "obrazec" - le v novem izgledu. */
+  function nastaviZaslon(zaslon) {
+    document.body.dataset.zaslon = zaslon;
+    if (jeNovIzgled()) window.scrollTo(0, 0);
+  }
+
+  function indeksKoraka() {
+    return Math.max(0, KORAKI.findIndex((k) => k.id === document.body.dataset.korak));
+  }
+
+  function nastaviKorak(korak) {
+    document.body.dataset.korak = korak;
+    prikaz.querySelectorAll("[data-nov-korak]").forEach((b) => {
+      const aktiven = b.dataset.novKorak === korak;
+      b.classList.toggle("aktiven", aktiven);
+      if (aktiven) b.setAttribute("aria-current", "step");
+      else b.removeAttribute("aria-current");
+    });
+    const i = indeksKoraka();
+    const nazaj = document.getElementById("nov-nazaj");
+    const naprej = document.getElementById("nov-naprej");
+    if (nazaj) nazaj.hidden = i === 0;
+    if (naprej) {
+      naprej.textContent =
+        i < KORAKI.length - 1
+          ? `Naprej: ${KORAKI[i + 1].oznaka.toLowerCase()} ›`
+          : "Pripravi PDF";
+    }
+    if (jeNovIzgled()) window.scrollTo(0, 0);
+  }
+
+  function glavaNovegaIzgledaVHtml(naslov) {
+    const koraki = KORAKI.map(
+      (k, i) => `<button type="button" class="nov-korak" data-nov-korak="${k.id}">
+          <span class="nov-korak-st">${i + 1}</span>${k.oznaka}</button>`
+    ).join('<span class="nov-korak-loc" aria-hidden="true">›</span>');
+    return `<div class="nov-glava-obrazca samo-nov">
+        <button type="button" class="gumb-tih nov-na-seznam" id="nov-na-seznam">‹ Obrazci</button>
+        <h2>${escapeHtml(naslov)}</h2>
+        <div class="nov-koraki">${koraki}</div>
+        <nav class="nov-trak" aria-label="Rubrike obrazca"></nav>
+      </div>`;
+  }
+
+  function rubrikeObrazca() {
+    return [...prikaz.querySelectorAll("#obrazec-polja > .polja-skupina")];
+  }
+
+  function naslovRubrike(skupina) {
+    const h = skupina.querySelector(":scope > h3");
+    if (!h) return "";
+    const kopija = h.cloneNode(true);
+    kopija.querySelectorAll(".stran-oznaka").forEach((e) => e.remove());
+    return kopija.textContent.trim();
+  }
+
+  /**
+   * Deli obrazca za kazalo: rubrike (h3) in sklopi v njih (h4 - "Zavarovanec",
+   * "Zavarovalec"). Obrazci brez oštevilčenih razdelkov imajo za rubriko le
+   * "Stran 1", pravi pregled dajo šele sklopi.
+   * [{ el (cilj skoka), naslov, raven, vsebina: [elementi], list }]
+   */
+  function deliObrazca() {
+    const deli = [];
+    rubrikeObrazca().forEach((s) => {
+      const rubrika = { el: s, naslov: naslovRubrike(s), raven: 1, vsebina: [s], list: true };
+      deli.push(rubrika);
+      const pred = []; // polja rubrike pred prvim sklopom ("Številka police")
+      let sklop = null;
+      for (const otrok of s.children) {
+        if (otrok.matches("h4.naslov-sklopa")) {
+          sklop = { el: otrok, naslov: otrok.textContent.trim(), raven: 2, vsebina: [], list: true };
+          deli.push(sklop);
+        } else if (sklop) {
+          sklop.vsebina.push(otrok);
+        } else {
+          pred.push(otrok);
+        }
+      }
+      // Rubrika s sklopi je razdelek le, če ima tudi sama polja.
+      if (deli[deli.length - 1] !== rubrika) {
+        rubrika.vsebina = pred;
+        rubrika.list = pred.some((e) => e.querySelector("[data-ime], .odgovor-gumb"));
+      }
+    });
+    return deli;
+  }
+
+  /**
+   * Ali je v delu obrazca kaj vpisanega? Privzeta vrednost obrazca (DPZP
+   * "NE") ne šteje, prav tako ne polja v skritih (neizbranih) blokih.
+   */
+  function jeIzpolnjeno(vsebina) {
+    for (const kos of vsebina) {
+      for (const el of kos.querySelectorAll("[data-ime]")) {
+        if (el.parentElement.closest("[hidden]")) continue;
+        if (el.type === "checkbox") {
+          if (el.checked) return true;
+        } else if (el.tagName === "SELECT") {
+          const izbrana = el.options[el.selectedIndex];
+          if (el.value && !(izbrana && izbrana.defaultSelected)) return true;
+        } else if (el.value.trim() && el.value !== el.defaultValue) {
+          return true;
+        }
+      }
+      const odgovor = [...kos.querySelectorAll(".odgovor-gumb.izbran")].some(
+        (g) => !g.hasAttribute("data-segment") && !g.parentElement.closest("[hidden]")
+      );
+      if (odgovor) return true;
+    }
+    return false;
+  }
+
+  let deliKazala = [];
+
+  function izrisiKazaloRubrik() {
+    deliKazala = deliObrazca();
+    deliKazala.forEach((d, i) => {
+      d.el.id = "del-" + (i + 1);
+    });
+    const html = deliKazala
+      .map(
+        (d, i) => `<a href="#del-${i + 1}" data-del="${i + 1}" class="raven-${d.raven}${
+          d.list ? " list" : ""
+        }">
+          <span class="nov-oznaka-stanja" aria-hidden="true"></span>
+          <span class="nov-ime-rubrike">${escapeHtml(d.naslov)}</span></a>`
+      )
+      .join("");
+    prikaz.querySelectorAll(".nov-kazalo, .nov-trak").forEach((n) => {
+      n.innerHTML = html;
+    });
+    prikaz.querySelectorAll(".nov-kazalo a, .nov-trak a").forEach((a) =>
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        const cilj = document.getElementById("del-" + a.dataset.del);
+        if (cilj) cilj.scrollIntoView({ behavior: "smooth", block: "start" });
+      })
+    );
+  }
+
+  /** Označi del, ki je trenutno na zaslonu (zadnji, ki je prešel vrh). */
+  let tekociDel = null;
+  function oznaciTekociDel() {
+    if (!jeNovIzgled() || !deliKazala.length || !deliKazala[0].el.isConnected) return;
+    const meja = window.innerHeight * 0.35;
+    let st = 1;
+    deliKazala.forEach((d, i) => {
+      if (d.el.getBoundingClientRect().top <= meja) st = i + 1;
+    });
+    if (st === tekociDel) return;
+    tekociDel = st;
+    prikaz
+      .querySelectorAll("[data-del]")
+      .forEach((a) => a.classList.toggle("tekoca", Number(a.dataset.del) === st));
+    // Trak (ožji zaslon) pomakne tekoči del v vidno polje.
+    const trak = prikaz.querySelector(".nov-trak");
+    const v = trak && trak.querySelector(`[data-del="${st}"]`);
+    if (v && trak.offsetParent) trak.scrollTo({ left: v.offsetLeft - 16, behavior: "smooth" });
+  }
+  let cakaDrsenje = false;
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (cakaDrsenje) return;
+      cakaDrsenje = true;
+      requestAnimationFrame(() => {
+        cakaDrsenje = false;
+        oznaciTekociDel();
+      });
+    },
+    { passive: true }
+  );
+
+  function posodobiNovIzgled() {
+    if (!deliKazala.length || !deliKazala[0].el.isConnected) return;
+    let izpolnjenih = 0;
+    let listov = 0;
+    deliKazala.forEach((d, i) => {
+      const da = jeIzpolnjeno(d.vsebina);
+      if (d.list) {
+        listov++;
+        if (da) izpolnjenih++;
+      }
+      prikaz
+        .querySelectorAll(`[data-del="${i + 1}"]`)
+        .forEach((a) => a.classList.toggle("izpolnjena", da));
+    });
+    const besedilo = document.getElementById("nov-napredek-besedilo");
+    if (besedilo) besedilo.textContent = `${izpolnjenih} od ${listov} razdelkov`;
+    const polnilo = document.getElementById("nov-napredek-polnilo");
+    if (polnilo) polnilo.style.width = Math.round((100 * izpolnjenih) / listov) + "%";
+    tekociDel = null;
+    oznaciTekociDel();
+  }
+
+  /** Ob vsakem izrisu obrazca: kazalo, koraki in spodnja vrstica. */
+  function povezNovIzgled() {
+    izrisiKazaloRubrik();
+    prikaz
+      .querySelectorAll("[data-nov-korak]")
+      .forEach((b) => b.addEventListener("click", () => nastaviKorak(b.dataset.novKorak)));
+    document
+      .getElementById("nov-na-seznam")
+      .addEventListener("click", () => nastaviZaslon("seznam"));
+    document.getElementById("nov-nazaj").addEventListener("click", () => {
+      const i = indeksKoraka();
+      if (i > 0) nastaviKorak(KORAKI[i - 1].id);
+    });
+    document.getElementById("nov-naprej").addEventListener("click", () => {
+      const i = indeksKoraka();
+      if (i < KORAKI.length - 1) nastaviKorak(KORAKI[i + 1].id);
+      else pripraviPdf();
+    });
+    let caka = false;
+    const obSpremembi = () => {
+      if (caka) return;
+      caka = true;
+      requestAnimationFrame(() => {
+        caka = false;
+        posodobiNovIzgled();
+      });
+    };
+    const obrazec = document.getElementById("obrazec-polja");
+    ["input", "change", "click"].forEach((d) => obrazec.addEventListener(d, obSpremembi));
+    nastaviKorak("izpolni");
+    nastaviZaslon("obrazec");
+    posodobiNovIzgled();
+  }
+
+  // Gumb v glavi preklaplja med izgledoma; meni v novem izgledu le sproži
+  // obstoječe gumbe glave, ki so tam skriti.
+  document.body.dataset.zaslon = "seznam";
+  const gumbIzgleda = document.getElementById("preklop-izgleda");
+  if (gumbIzgleda) {
+    gumbIzgleda.setAttribute("aria-pressed", String(jeNovIzgled()));
+    gumbIzgleda.addEventListener("click", () => nastaviIzgled(!jeNovIzgled()));
+  }
+  document.querySelectorAll(".meni-glave [data-klikni]").forEach((b) =>
+    b.addEventListener("click", () => {
+      b.closest("details").open = false;
+      const cilj = document.getElementById(b.dataset.klikni);
+      if (cilj) cilj.click();
+    })
+  );
+  if (!/^https?:$/.test(location.protocol)) {
+    const prenesi = document.querySelector('.meni-glave [data-klikni="prenesi-orodje"]');
+    if (prenesi) prenesi.hidden = true;
+  }
+  izmeriGlavo();
+  window.addEventListener("resize", izmeriGlavo);
 
   /**
    * Vrstica obrazca z enim odgovorom za vsa okenca v njej.
@@ -1317,6 +1643,7 @@
       .querySelectorAll(".odgovor-gumb.izbran")
       .forEach((g) => g.classList.remove("izbran"));
     ponastaviRocnePostavitve();
+    posodobiNovIzgled();
     podpisniPasovi.forEach((p) => {
       p.slika = null;
       p.ime = "";
