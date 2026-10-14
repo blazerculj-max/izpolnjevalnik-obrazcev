@@ -8,9 +8,9 @@
 // stari različici.
 
 const RAZLICICA = "__RAZLICICA__";
-// Korena ("./") namenoma ne shranjujemo posebej - to je ista 4,5 MB datoteka
-// kot index.html in bi zasedla dvakrat toliko prostora. Ob odprtju brez
-// povezave jo postreže zasilna pot v obravnavi fetch spodaj.
+// Korena ("./") namenoma ne shranjujemo posebej - to je ista (velika)
+// datoteka kot index.html in bi zasedla dvakrat toliko prostora. Odprtje
+// korena postreže index.html (obravnava fetch spodaj).
 const DATOTEKE = [
   "./index.html",
   "./manifest.webmanifest",
@@ -20,8 +20,13 @@ const DATOTEKE = [
 ];
 
 self.addEventListener("install", (e) => {
+  // cache: "reload" gre mimo brskalnikovega predpomnilnika: sicer bi nova
+  // različica service workerja lahko shranila še staro orodje.
   e.waitUntil(
-    caches.open(RAZLICICA).then((p) => p.addAll(DATOTEKE)).then(() => self.skipWaiting())
+    caches
+      .open(RAZLICICA)
+      .then((p) => p.addAll(DATOTEKE.map((d) => new Request(d, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -37,6 +42,18 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const zahteva = e.request;
   if (zahteva.method !== "GET") return;
+
+  // Odprtje orodja vedno postreže shranjena kopija, brez čakanja na omrežje:
+  // ob slabem signalu bi sicer čakali na iztek povezave, na Wi-Fi z vstopno
+  // stranjo (hotel, bolnišnica) pa bi se namesto orodja odprla ta stran.
+  // Novo različico prinese posodobitev service workerja (lučka v glavi).
+  const pot = new URL(zahteva.url).pathname;
+  if (zahteva.mode === "navigate" && (pot.endsWith("/") || pot.endsWith("/index.html"))) {
+    e.respondWith(
+      caches.match("./index.html").then((shranjeno) => shranjeno || fetch(zahteva))
+    );
+    return;
+  }
 
   e.respondWith(
     caches.match(zahteva, { ignoreSearch: true }).then((zadetek) => {

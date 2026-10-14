@@ -81,6 +81,7 @@ async function zgradi() {
     crypto
       .createHash("sha256")
       .update(fs.readFileSync(ORODJE))
+      .update(fs.readFileSync(path.join(PWA, "sw.js")))
       .digest("hex")
       .slice(0, 12);
   for (const d of fs.readdirSync(PWA)) {
