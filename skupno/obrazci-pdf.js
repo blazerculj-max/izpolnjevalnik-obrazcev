@@ -85,6 +85,27 @@
       }));
     }
 
+    /**
+     * Privzeta vrednost spustnega seznama (/DV), kadar trenutne (/V) ni in
+     * je privzeta ena od ponujenih možnosti; sicer null.
+     */
+    function privzetaIzbira(polje) {
+      const tip = tipPolja(polje);
+      if (tip !== "Dropdown" && tip !== "OptionList") return null;
+      const dict = polje.acroField.dict;
+      if (dict.get(PDFName.of("V"))) return null;
+      const dv = dict.lookup(PDFName.of("DV"));
+      if (!dv || typeof dv.decodeText !== "function") return null;
+      const vrednost = dv.decodeText();
+      let moznosti = [];
+      try {
+        moznosti = polje.getOptions();
+      } catch {
+        return null;
+      }
+      return moznosti.includes(vrednost) ? vrednost : null;
+    }
+
     /** Polja obrazca s tipom, stranjo in položajem (v odstotkih strani). */
     const NAJVEC_VRZEL_DO_NAPISA = 30; // pt med okencem in njegovim napisom
 
@@ -151,6 +172,8 @@
               /* nekatera polja nimajo možnosti */
             }
           }
+          const privzeto = privzetaIzbira(p);
+          if (privzeto) skupno.privzeto = privzeto;
           if (typeof p.getMaxLength === "function") {
             const m = p.getMaxLength();
             if (m) skupno.najvec_znakov = m;
@@ -535,7 +558,19 @@
         }
       }
 
-      for (const [ime, vrednost] of Object.entries(vrednosti)) {
+      // Spustni seznam brez vrednosti (/V) pregledovalnik pokaže s privzeto
+      // (/DV) - v Zahtevku "NE" pri vseh DPZP. Ob izvozu bi ostal prazen in
+      // obrazec bi bil drugačen od izvirnika, zato privzeto vrednost
+      // zapišemo, kadar je zastopnik ne spremeni.
+      const zVrednostmi = { ...vrednosti };
+      form.getFields().forEach((f) => {
+        const ime = f.getName();
+        if (zVrednostmi[ime] !== undefined && zVrednostmi[ime] !== "") return;
+        const privzeto = privzetaIzbira(f);
+        if (privzeto) zVrednostmi[ime] = privzeto;
+      });
+
+      for (const [ime, vrednost] of Object.entries(zVrednostmi)) {
         if (vrednost === "" || vrednost === null || vrednost === undefined) continue;
         let polje;
         try {

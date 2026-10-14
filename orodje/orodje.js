@@ -733,22 +733,37 @@
    * Ena celica ročne postavitve. Celica z gumbi vrednost hrani v skritem
    * vnosu z data-ime, zato jo izvoz pobere kot vsako drugo polje.
    */
+  /**
+   * Skriti vnos in gumbi za celico z gumbi. Privzeta vrednost obrazca (/DV,
+   * npr. DPZP "NE") je izbrana že od začetka: izvoz jo zapiše tudi, ko je
+   * ne izbereš, zato mora biti vidna.
+   */
+  function segmentVHtml(p, moznosti, opis) {
+    const privzeto = p.privzeto && moznosti.includes(p.privzeto) ? p.privzeto : "";
+    const gumbi = moznosti
+      .map((g) => {
+        const barva = g === "DA" ? " da" : g === "NE" ? " ne" : "";
+        const izbran = g === privzeto ? " izbran" : "";
+        return `<button type="button" class="odgovor-gumb${barva}${izbran}" data-segment
+            data-vrednost="${escapeHtml(g)}">${escapeHtml(g)}</button>`;
+      })
+      .join("");
+    const vrednost = privzeto
+      ? ` value="${escapeHtml(privzeto)}" data-privzeto="${escapeHtml(privzeto)}"`
+      : "";
+    const skupina = opis ? ` role="group" aria-label="${escapeHtml(opis)}"` : "";
+    return `<input type="text" hidden data-ime="${escapeHtml(p.ime)}" data-tip="${p.tip}"${vrednost} />
+          <div class="odgovor-gumbi segment"${skupina}>${gumbi}</div>`;
+  }
+
   function celicaVHtml(shema, c) {
     const p = shema.polja.find((x) => x.ime === c.polje);
     if (!p) return ""; // neobvezno polje, ki ga v tej izdaji obrazca ni
     const razpon = c.sirina ? ` style="grid-column: span ${c.sirina}"` : "";
     if (c.gumbi) {
-      const gumbi = c.gumbi
-        .map((g) => {
-          const barva = g === "DA" ? " da" : g === "NE" ? " ne" : "";
-          return `<button type="button" class="odgovor-gumb${barva}" data-segment
-            data-vrednost="${escapeHtml(g)}">${escapeHtml(g)}</button>`;
-        })
-        .join("");
       return `<div class="celica"${razpon}><div class="polje">
           <span class="oznaka-polja">${escapeHtml(c.oznaka)}</span>
-          <input type="text" hidden data-ime="${escapeHtml(p.ime)}" data-tip="${p.tip}" />
-          <div class="odgovor-gumbi segment">${gumbi}</div>
+          ${segmentVHtml(p, c.gumbi)}
         </div></div>`;
     }
     const polje = poljeVHtml({
@@ -801,16 +816,8 @@
       if (!p) return `<td data-oseba="${n}"${skrij(n)}></td>`;
       const opis = `${v.oznaka}, ${b.glava(n)}`;
       if (v.gumbi) {
-        const gumbi = v.gumbi
-          .map(
-            (g) => `<button type="button" class="odgovor-gumb${
-              g === "DA" ? " da" : g === "NE" ? " ne" : ""
-            }" data-segment data-vrednost="${escapeHtml(g)}">${escapeHtml(g)}</button>`
-          )
-          .join("");
         return `<td data-oseba="${n}"${skrij(n)}><div class="celica">
-            <input type="text" hidden data-ime="${escapeHtml(p.ime)}" data-tip="${p.tip}" />
-            <div class="odgovor-gumbi segment" role="group" aria-label="${escapeHtml(opis)}">${gumbi}</div>
+            ${segmentVHtml(p, v.gumbi, opis)}
           </div></td>`;
       }
       return `<td data-oseba="${n}"${skrij(n)}><input type="text" data-ime="${escapeHtml(
@@ -911,17 +918,24 @@
 
   function ponastaviRocnePostavitve() {
     prikaz.querySelectorAll("[data-dodaj]").forEach((g) => nastaviStOseb(g.dataset.dodaj, 1));
+    // Po ponastavitvi obrazca imajo skriti vnosi spet privzeto vrednost;
+    // gumbi naj kažejo isto.
+    prikaz.querySelectorAll("[data-segment]").forEach((g) => {
+      const vnos = g.closest(".celica").querySelector("input[data-ime]");
+      g.classList.toggle("izbran", vnos.value === g.dataset.vrednost);
+    });
     posodobiPogoje();
   }
 
   function povezRocnePostavitve() {
     // Gumbi namesto tipkanja: vrednost gre v skriti vnos; ponoven klik jo
-    // prekliče.
+    // prekliče - razen privzete, ki bi jo izvoz tako ali tako zapisal.
     prikaz.querySelectorAll("[data-segment]").forEach((g) =>
       g.addEventListener("click", () => {
         const celica = g.closest(".celica");
         const vnos = celica.querySelector("input[data-ime]");
         const jeIzbran = vnos.value === g.dataset.vrednost;
+        if (jeIzbran && vnos.dataset.privzeto) return;
         vnos.value = jeIzbran ? "" : g.dataset.vrednost;
         celica
           .querySelectorAll("[data-segment]")
@@ -1010,11 +1024,18 @@
         <label for="${id}">${znacka}${oznaka}${pojasnilo}</label></div>`;
     }
     if (p.moznosti && p.moznosti.length) {
+      // Privzeto vrednost obrazca (/DV) izvoz zapiše tudi, ko je ne izbereš,
+      // zato je izbrana že tu in prazne možnosti ni.
       return `<div class="polje"><label class="oznaka-polja" for="${id}">${oznaka}</label>
         <select id="${id}" data-ime="${escapeHtml(p.ime)}" data-tip="${p.tip}">
-          <option value=""></option>
+          ${p.privzeto ? "" : `<option value=""></option>`}
           ${p.moznosti
-            .map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
+            .map(
+              (m) =>
+                `<option value="${escapeHtml(m)}"${
+                  m === p.privzeto ? " selected" : ""
+                }>${escapeHtml(m)}</option>`
+            )
             .join("")}
         </select>${pojasnilo}</div>`;
     }
