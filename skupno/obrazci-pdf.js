@@ -522,7 +522,12 @@
       if (pisavaBajti) {
         try {
           doc.registerFontkit(fontkit);
-          pisava = await doc.embedFont(pisavaBajti, { subset: true });
+          // Zaklenjen PDF potrebuje le znake, ki smo jih vpisali, zato
+          // vgradimo samo te. Nezaklenjenega pa lahko kdo še popravlja (v
+          // Predogledu na iPadu, v Chromu); pregledovalnik piše z isto
+          // pisavo, in če znaka v njej ni, ga izpusti. Zato tam vgradimo
+          // celo pisavo - datoteka je za okoli 0,6 MB večja.
+          pisava = await doc.embedFont(pisavaBajti, { subset: zakleni });
         } catch (e) {
           opozorila.push(
             `Pisave s šumniki ni bilo mogoče vgraditi (${e.message}); črke č, š, ž morda ne bodo pravilne.`
