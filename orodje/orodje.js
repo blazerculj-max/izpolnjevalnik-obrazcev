@@ -43,11 +43,40 @@
   // ------------------------------------------------------- odpiranje datoteke
 
   vnosDatoteke.addEventListener("change", () => {
-    if (vnosDatoteke.files[0]) odpriDatoteko(vnosDatoteke.files[0]);
+    const f = vnosDatoteke.files[0];
+    // Izbiro počistimo, sicer brskalnik ob ponovni izbiri iste datoteke
+    // ne sproži "change" in se ne zgodi nič.
+    vnosDatoteke.value = "";
+    if (f) odpriDatoteko(f);
   });
   document
     .getElementById("izberi-datoteko")
     .addEventListener("click", () => vnosDatoteke.click());
+
+  // Območje za spuščanje je tudi gumb ("ali klikni za izbiro"; v novem
+  // izgledu "+ Odpri svoj PDF obrazec").
+  spustisce.addEventListener("click", (e) => {
+    if (e.target !== vnosDatoteke) vnosDatoteke.click();
+  });
+  spustisce.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      vnosDatoteke.click();
+    }
+  });
+
+  // PDF, spuščen kamorkoli na stran, odpremo v orodju. Brez tega bi ga
+  // brskalnik odprl namesto orodja in vpisano bi se izgubilo.
+  ["dragover", "drop"].forEach((d) =>
+    document.addEventListener(d, (e) => {
+      if (!e.dataTransfer || ![...e.dataTransfer.types].includes("Files")) return;
+      e.preventDefault();
+      if (d === "drop" && !spustisce.contains(e.target)) {
+        const f = e.dataTransfer.files[0];
+        if (f) odpriDatoteko(f);
+      }
+    })
+  );
 
   ["dragenter", "dragover"].forEach((d) =>
     spustisce.addEventListener(d, (e) => {

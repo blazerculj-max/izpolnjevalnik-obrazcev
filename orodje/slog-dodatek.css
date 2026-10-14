@@ -237,6 +237,7 @@ body:not(.izgled-nov) .samo-nov { display: none !important; }
 .izgled-nov .plosca-obrazca:hover { box-shadow: var(--senca); }
 .izgled-nov .spustisce {
   border: none; background: none; padding: 4px 2px; margin: 0 0 18px; text-align: left;
+  width: fit-content;
 }
 .izgled-nov .spustisce strong { font-size: 14px; font-weight: 600; color: var(--modra); }
 
