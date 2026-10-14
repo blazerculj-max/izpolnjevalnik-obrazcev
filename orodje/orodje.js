@@ -504,6 +504,28 @@
     const razdelki = shema.razdelki || [];
     const podrazdelki = shema.podrazdelki || [];
 
+    // Rubrike z ročno postavitvijo (postavitve.js) narišemo po njej; njihova
+    // polja izpustimo iz samodejne postavitve. Polja rubrike, ki jih
+    // postavitev ne navede, pokažemo pod njo, da se nobeno ne izgubi.
+    const rocne = postavitveZa(ime);
+    const pokrita = new Set();
+    rocne.forEach((r) =>
+      window.POSTAVITVE_OBRAZCEV.imenaPolj(r).forEach((x) => pokrita.add(x.ime))
+    );
+    const rocnaZaRazdelek = (indeks) => {
+      const r = indeks >= 0 ? razdelki[indeks] : null;
+      if (!r) return null;
+      return (
+        rocne.find((ro) =>
+          new RegExp("^" + ro.razdelek.replace(/\./g, "\\.") + "(\\s|$)").test(r.naslov)
+        ) || null
+      );
+    };
+    const jePokrit = (vir) =>
+      vir.polja
+        ? vir.polja.every((n) => pokrita.has(n))
+        : pokrita.has(vir.ime);
+
     // Polja združimo po razdelkih obrazca ("Zavarovalec", "2. Podatki o
     // zavarovalnem primeru"), znotraj njih pa po sklopih, ki jih obrazec piše
     // z manjšim naslovom ("Osebni dokument", "Naslov stalnega prebivališča").
@@ -525,7 +547,19 @@
     let tekoca = null;
     let tekociSklop = null;
     let tekocaVrstica = null;
+    const narisane = new Map(); // rubrika -> njena skupina
     for (const e of elementi) {
+      const rocna = rocnaZaRazdelek(e.vir.razdelek);
+      if (rocna) {
+        if (!narisane.has(rocna)) {
+          const skupina = { rocna, stran: e.vir.stran, ostalo: [] };
+          narisane.set(rocna, skupina);
+          skupine.push(skupina);
+          tekoca = null;
+        }
+        if (!jePokrit(e.vir)) narisane.get(rocna).ostalo.push(e.html);
+        continue;
+      }
       const r = e.vir.razdelek >= 0 ? razdelki[e.vir.razdelek] : null;
       const pr = e.vir.podrazdelek >= 0 ? podrazdelki[e.vir.podrazdelek] : null;
       const kljuc = r ? e.vir.stran + "|" + e.vir.razdelek : "stran" + e.vir.stran;
@@ -559,8 +593,10 @@
     }
 
     const skupineHtml = skupine
-      .map(
-        (s) => `<div class="polja-skupina">
+      .map((s) =>
+        s.rocna
+          ? rocnaRubrikaVHtml(s.rocna, shema, s.ostalo)
+          : `<div class="polja-skupina">
             <h3>${escapeHtml(s.naslov)} <span class="stran-oznaka">str. ${s.stran}</span></h3>
             ${s.opomba ? `<p class="opomba-razdelka">${escapeHtml(s.opomba)}</p>` : ""}
             ${s.sklopi
@@ -636,6 +672,8 @@
       })
     );
 
+    povezRocnePostavitve();
+
     izbranaStranPodpisov = podpisniPasovi[0]?.stran || 1;
     izrisiZavihkePodpisov();
     izrisiSeznamPodpisov();
@@ -666,6 +704,241 @@
         </div>
         <div class="odgovor-gumbi">${gumbi}</div>
       </div>`;
+  }
+
+  // ------------------------------------------------------- ročne postavitve
+
+  /** Rubrike z ročno postavitvijo za odprti obrazec (glej postavitve.js). */
+  function postavitveZa(ime) {
+    const p = window.POSTAVITVE_OBRAZCEV;
+    return p ? p.zaObrazec(ime) : [];
+  }
+
+  /** Izbira iz sheme, ki pokriva dano polje. */
+  function izbiraZaPolje(shema, imePolja) {
+    return (shema.izbire || []).find((i) => i.polja.includes(imePolja)) || null;
+  }
+
+  /** Atributi pogoja: blok je viden le pri izbrani (ali nobeni) možnosti. */
+  function pogojAtributi(shema, pogoj) {
+    if (!pogoj) return "";
+    const izbira = izbiraZaPolje(shema, pogoj.polje);
+    if (!izbira) return "";
+    return pogoj.prazno
+      ? ` data-pogoj-izbira="${izbira.id}" data-pogoj-prazno="1"`
+      : ` data-pogoj-izbira="${izbira.id}" data-pogoj-vklop="${escapeHtml(pogoj.vklop)}" hidden`;
+  }
+
+  /**
+   * Ena celica ročne postavitve. Celica z gumbi vrednost hrani v skritem
+   * vnosu z data-ime, zato jo izvoz pobere kot vsako drugo polje.
+   */
+  function celicaVHtml(shema, c) {
+    const p = shema.polja.find((x) => x.ime === c.polje);
+    if (!p) return ""; // neobvezno polje, ki ga v tej izdaji obrazca ni
+    const razpon = c.sirina ? ` style="grid-column: span ${c.sirina}"` : "";
+    if (c.gumbi) {
+      const gumbi = c.gumbi
+        .map((g) => {
+          const barva = g === "DA" ? " da" : g === "NE" ? " ne" : "";
+          return `<button type="button" class="odgovor-gumb${barva}" data-segment
+            data-vrednost="${escapeHtml(g)}">${escapeHtml(g)}</button>`;
+        })
+        .join("");
+      return `<div class="celica"${razpon}><div class="polje">
+          <span class="oznaka-polja">${escapeHtml(c.oznaka)}</span>
+          <input type="text" hidden data-ime="${escapeHtml(p.ime)}" data-tip="${p.tip}" />
+          <div class="odgovor-gumbi segment">${gumbi}</div>
+        </div></div>`;
+    }
+    const polje = poljeVHtml({
+      ...p,
+      oznaka: c.oznaka,
+      enota: c.enota !== undefined ? c.enota : p.enota,
+      oznaka_iz_pdf: null,
+      pripomba: null,
+      moznost: null,
+    });
+    return `<div class="celica"${razpon}>${polje}</div>`;
+  }
+
+  /** Vrstica celic kot mreža; širina celice je v stolpcih mreže. */
+  function mrezaVHtml(shema, celice) {
+    const stolpcev = celice.reduce((n, c) => n + (c.sirina || 1), 0);
+    return `<div class="mreza-postavitve" style="grid-template-columns: repeat(${stolpcev}, minmax(0, 1fr))">
+        ${celice.map((c) => celicaVHtml(shema, c)).join("")}
+      </div>`;
+  }
+
+  function osebeVHtml(shema, b) {
+    const kartice = [];
+    for (let n = 1; n <= b.stevilo; n++) {
+      const vsebina = window.POSTAVITVE_OBRAZCEV.vrsticeOsebe(b, n)
+        .map((v) =>
+          Array.isArray(v)
+            ? mrezaVHtml(shema, v)
+            : `<div class="kartica-podnaslov">${escapeHtml(v.podnaslov)}</div>`
+        )
+        .join("");
+      kartice.push(`<div class="kartica-osebe" data-skupina="${b.skupina}" data-oseba="${n}"${
+        n > 1 ? " hidden" : ""
+      }>
+          <div class="kartica-glava"><span class="kartica-st">${n}</span>${n}. ${escapeHtml(b.naziv)}</div>
+          ${vsebina}
+        </div>`);
+    }
+    return `${kartice.join("")}
+      <button type="button" class="gumb-dodaj" data-dodaj="${b.skupina}"
+        data-naziv="${escapeHtml(b.nazivDodaj || b.naziv)}" data-najvec="${b.stevilo}"
+        >+ Dodaj 2. ${escapeHtml(b.nazivDodaj || b.naziv)}</button>`;
+  }
+
+  function tabelaVHtml(shema, b) {
+    const stolpci = Array.from({ length: b.stevilo }, (_, i) => i + 1);
+    const skrij = (n) => (n > 1 ? " hidden" : "");
+    const celica = (v, n) => {
+      const p = shema.polja.find((x) => x.ime === v.polje(n));
+      if (!p) return `<td data-oseba="${n}"${skrij(n)}></td>`;
+      const opis = `${v.oznaka}, ${b.glava(n)}`;
+      if (v.gumbi) {
+        const gumbi = v.gumbi
+          .map(
+            (g) => `<button type="button" class="odgovor-gumb${
+              g === "DA" ? " da" : g === "NE" ? " ne" : ""
+            }" data-segment data-vrednost="${escapeHtml(g)}">${escapeHtml(g)}</button>`
+          )
+          .join("");
+        return `<td data-oseba="${n}"${skrij(n)}><div class="celica">
+            <input type="text" hidden data-ime="${escapeHtml(p.ime)}" data-tip="${p.tip}" />
+            <div class="odgovor-gumbi segment" role="group" aria-label="${escapeHtml(opis)}">${gumbi}</div>
+          </div></td>`;
+      }
+      return `<td data-oseba="${n}"${skrij(n)}><input type="text" data-ime="${escapeHtml(
+        p.ime
+      )}" data-tip="TextField" aria-label="${escapeHtml(opis)}"
+          autocomplete="off" autocorrect="off" spellcheck="false"
+          ${p.najvec_znakov ? `maxlength="${p.najvec_znakov}"` : ""} /></td>`;
+    };
+    return `<div class="tabela-kritij-ovoj" data-skupina="${b.skupina}">
+        ${b.naslov ? `<div class="kartica-podnaslov">${escapeHtml(b.naslov)}</div>` : ""}
+        <table class="tabela-kritij">
+          <thead><tr><th scope="col"></th>${stolpci
+            .map((n) => `<th scope="col" data-oseba="${n}"${skrij(n)}>${escapeHtml(b.glava(n))}</th>`)
+            .join("")}</tr></thead>
+          <tbody>${b.vrstice
+            .map(
+              (v) =>
+                `<tr><th scope="row">${escapeHtml(v.oznaka)}</th>${stolpci
+                  .map((n) => celica(v, n))
+                  .join("")}</tr>`
+            )
+            .join("")}</tbody>
+        </table>
+      </div>`;
+  }
+
+  /** Cela rubrika z ročno postavitvijo. */
+  function rocnaRubrikaVHtml(rubrika, shema, ostalo) {
+    const strani = new Set(
+      shema.polja
+        .filter((p) =>
+          window.POSTAVITVE_OBRAZCEV.imenaPolj(rubrika).some((x) => x.ime === p.ime)
+        )
+        .map((p) => p.stran)
+    );
+    const oznakaStrani = [...strani].sort((a, b) => a - b).join("–");
+
+    const bloki = rubrika.bloki
+      .map((b) => {
+        const pogoj = pogojAtributi(shema, b.pogoj);
+        if (b.vrsta === "izbira") {
+          const izbira = izbiraZaPolje(shema, b.polje);
+          if (!izbira) return "";
+          const moznosti = izbira.moznosti.map((m) => ({
+            ...m,
+            oznaka: (b.oznake && b.oznake[m.vklop]) || m.oznaka,
+          }));
+          return `<div class="rocna-izbira"${pogoj}>${izbiraVHtml({
+            ...izbira,
+            moznosti,
+            oznaka: b.vprasanje,
+            razdelekNaslov: null,
+            dodatno: null,
+          })}</div>`;
+        }
+        if (b.vrsta === "namig") {
+          return `<p class="namig rocni-namig"${pogoj}>${escapeHtml(b.besedilo)}</p>`;
+        }
+        if (b.vrsta === "osebe") {
+          return `<div class="pogojni"${pogoj}>${osebeVHtml(shema, b)}</div>`;
+        }
+        if (b.vrsta === "tabela") {
+          return `<div class="pogojni"${pogoj}>${tabelaVHtml(shema, b)}</div>`;
+        }
+        return "";
+      })
+      .join("");
+
+    return `<div class="polja-skupina rocna-rubrika">
+        <h3>${escapeHtml(rubrika.naslov)} <span class="stran-oznaka">str. ${oznakaStrani}</span></h3>
+        ${bloki}
+        ${ostalo.length ? `<div class="mreza-polj">${ostalo.join("")}</div>` : ""}
+      </div>`;
+  }
+
+  /** Pogojni bloki sledijo izbranim možnostim. */
+  function posodobiPogoje() {
+    prikaz.querySelectorAll("[data-pogoj-izbira]").forEach((el) => {
+      const izbran = odgovoriIzbir[el.dataset.pogojIzbira];
+      el.hidden = el.dataset.pogojPrazno ? Boolean(izbran) : izbran !== el.dataset.pogojVklop;
+    });
+  }
+
+  /** Koliko oseb skupine je odprtih; gumb Dodaj odpre naslednjo. */
+  function nastaviStOseb(skupina, koliko) {
+    prikaz
+      .querySelectorAll(`[data-skupina="${skupina}"] [data-oseba], .kartica-osebe[data-skupina="${skupina}"]`)
+      .forEach((el) => {
+        el.hidden = Number(el.dataset.oseba) > koliko;
+      });
+    prikaz.querySelectorAll(`[data-dodaj="${skupina}"]`).forEach((g) => {
+      const najvec = Number(g.dataset.najvec);
+      g.dataset.odprtih = String(koliko);
+      g.hidden = koliko >= najvec;
+      g.textContent = `+ Dodaj ${koliko + 1}. ${g.dataset.naziv}`;
+    });
+  }
+
+  function ponastaviRocnePostavitve() {
+    prikaz.querySelectorAll("[data-dodaj]").forEach((g) => nastaviStOseb(g.dataset.dodaj, 1));
+    posodobiPogoje();
+  }
+
+  function povezRocnePostavitve() {
+    // Gumbi namesto tipkanja: vrednost gre v skriti vnos; ponoven klik jo
+    // prekliče.
+    prikaz.querySelectorAll("[data-segment]").forEach((g) =>
+      g.addEventListener("click", () => {
+        const celica = g.closest(".celica");
+        const vnos = celica.querySelector("input[data-ime]");
+        const jeIzbran = vnos.value === g.dataset.vrednost;
+        vnos.value = jeIzbran ? "" : g.dataset.vrednost;
+        celica
+          .querySelectorAll("[data-segment]")
+          .forEach((d) => d.classList.toggle("izbran", !jeIzbran && d === g));
+      })
+    );
+    prikaz.querySelectorAll("[data-dodaj]").forEach((g) =>
+      g.addEventListener("click", () =>
+        nastaviStOseb(g.dataset.dodaj, Number(g.dataset.odprtih || 1) + 1)
+      )
+    );
+    // Izbira lahko odpre ali skrije pogojne bloke (paketna tabela proti
+    // samostojni izbiri kritij).
+    prikaz
+      .querySelectorAll(".odgovor-gumb[data-izbira]")
+      .forEach((g) => g.addEventListener("click", posodobiPogoje));
+    ponastaviRocnePostavitve();
   }
 
   /**
@@ -1022,6 +1295,7 @@
     document
       .querySelectorAll(".odgovor-gumb.izbran")
       .forEach((g) => g.classList.remove("izbran"));
+    ponastaviRocnePostavitve();
     podpisniPasovi.forEach((p) => {
       p.slika = null;
       p.ime = "";
@@ -1041,6 +1315,9 @@
     const stanje = document.getElementById("stanje-obrazca");
     const vrednosti = {};
     document.querySelectorAll("#obrazec-polja [data-ime]").forEach((el) => {
+      // Skrit pogojni blok (npr. paketna tabela, ko je izbrana samostojna
+      // izbira kritij) ne sme v PDF, tudi če je bil prej izpolnjen.
+      if (el.closest("[data-pogoj-izbira][hidden]")) return;
       if (el.dataset.tip === "CheckBox") {
         if (el.checked) vrednosti[el.dataset.ime] = true;
       } else if (el.value.trim()) {

@@ -18,6 +18,7 @@
 const fs = require("fs");
 const path = require("path");
 const { PDFDocument } = require("pdf-lib");
+const postavitve = require("../orodje/postavitve.js");
 const pdfApi = require("../skupno/obrazci-pdf.js").ustvari({
   PDFLib: require("pdf-lib"),
   fontkit: require("@pdf-lib/fontkit"),
@@ -56,12 +57,14 @@ async function vgrajeniObrazci() {
     .filter((f) => f.toLowerCase().endsWith(".pdf"))
     .sort((a, b) => a.localeCompare(b, "sl"))) {
     const bajti = fs.readFileSync(path.join(mapa, d));
+    let imenaPolj = null;
     try {
       const doc = await PDFDocument.load(bajti, { ignoreEncryption: true });
       // Enako kot orodje: štejemo tudi okvirje, ki jih obrazec pozabi
       // navesti med polji (glej dodajManjkajocaPolja v obrazci-pdf.js).
       pdfApi.dodajManjkajocaPolja(doc);
       const stPolj = doc.getForm().getFields().length;
+      imenaPolj = new Set(doc.getForm().getFields().map((f) => f.getName()));
       if (stPolj === 0) {
         console.warn(`   ⚠️  ${d}: brez vnosnih polj — ni vgrajen.`);
         continue;
@@ -76,8 +79,31 @@ async function vgrajeniObrazci() {
     } catch (e) {
       console.warn(`   ⚠️  ${d}: ${e.message} — ni vgrajen.`);
     }
+    // Zunaj try: napaka v postavitvi mora ustaviti gradnjo, ne le preskočiti
+    // obrazca.
+    if (imenaPolj) preveriPostavitev(d, imenaPolj);
   }
   return izhod;
+}
+
+/**
+ * Ročna postavitev navaja polja po imenih. Če katerega v obrazcu ni (nova
+ * izdaja obrazca je polje preimenovala), gradnja odpove - sicer bi orodje
+ * tiho izgubilo vnos.
+ */
+function preveriPostavitev(datoteka, imena) {
+  const manjkajo = [];
+  for (const rubrika of postavitve.zaObrazec(datoteka)) {
+    for (const { ime, neobvezno } of postavitve.imenaPolj(rubrika)) {
+      if (!neobvezno && !imena.has(ime)) manjkajo.push(`${rubrika.razdelek}: "${ime}"`);
+    }
+  }
+  if (manjkajo.length) {
+    throw new Error(
+      `Postavitev za ${datoteka} navaja polja, ki jih v obrazcu ni:\n   ` +
+        manjkajo.join("\n   ")
+    );
+  }
 }
 
 function klasicna(koda) {
@@ -125,6 +151,8 @@ async function zgradi() {
     // Delavec si sam nastavi globalThis.pdfjsWorker; pdf.js ga zato ne prenaša.
     modul(delavec),
     modul(pdfjs),
+    // Ročne postavitve rubrik (UMD, zapiše se v window).
+    klasicna(beri("orodje", "postavitve.js")),
     // Vmesnik gre nazadnje: moduli se izvedejo po vrsti in po razčlenjenem DOM.
     modul(beri("orodje", "orodje.js")),
   ].join("\n");
