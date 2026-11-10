@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/orodje-obrazci.html
+public/orodje-obrazci-beta.html
 
 # Nikoli v repozitorij: izpolnjeni obrazci s podatki strank.
 # Git pomni vse - izbris jih iz zgodovine ne odstrani.

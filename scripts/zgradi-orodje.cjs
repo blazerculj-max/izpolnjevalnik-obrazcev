@@ -27,6 +27,7 @@ const pdfApi = require("../skupno/obrazci-pdf.js").ustvari({
 
 const KOREN = path.join(__dirname, "..");
 const IZHOD = path.join(KOREN, "public", "orodje-obrazci.html");
+const IZHOD_BETA = path.join(KOREN, "public", "orodje-obrazci-beta.html");
 
 const beri = (...deli) => fs.readFileSync(path.join(KOREN, ...deli), "utf8");
 
@@ -98,7 +99,7 @@ function preveriPostavitev(datoteka, imena) {
       if (!neobvezno && !imena.has(ime)) manjkajo.push(`${rubrika.razdelek}: "${ime}"`);
     }
   }
-  for (const ime of Object.keys(postavitve.popravkiZaObrazec(datoteka))) {
+  for (const ime of Object.keys(postavitve.popravkiZaObrazec(datoteka, true))) {
     if (!imena.has(ime)) manjkajo.push(`popravek polja: "${ime}"`);
   }
   if (manjkajo.length) {
@@ -162,12 +163,24 @@ async function zgradi() {
 
   const slog = beri("public", "slog.css") + "\n" + beri("orodje", "slog-dodatek.css");
 
-  const html = beri("orodje", "predloga.html")
-    .replace("/*{{SLOG}}*/", () => slog)
-    .replace("<!--{{SKRIPTE}}-->", () => skripte);
+  const sestavi = (uvod) =>
+    beri("orodje", "predloga.html")
+      .replace("/*{{SLOG}}*/", () => slog)
+      .replace("<!--{{SKRIPTE}}-->", () => uvod + skripte);
 
   fs.mkdirSync(path.dirname(IZHOD), { recursive: true });
-  fs.writeFileSync(IZHOD, html);
+  fs.writeFileSync(IZHOD, sestavi(""));
+
+  // Testna različica: ista koda s prižganim stikalom window.ORODJE_BETA.
+  fs.writeFileSync(
+    IZHOD_BETA,
+    sestavi(klasicna("window.ORODJE_BETA=true;") + "\n")
+      .replace("<title>Izpolnjevalnik obrazcev</title>", "<title>Izpolnjevalnik obrazcev BETA</title>")
+      .replace(
+        'name="apple-mobile-web-app-title" content="Obrazci"',
+        'name="apple-mobile-web-app-title" content="Obrazci beta"'
+      )
+  );
 
   const mb = (fs.statSync(IZHOD).size / 1048576).toFixed(1);
   console.log(`✅ ${path.relative(KOREN, IZHOD)} (${mb} MB)`);

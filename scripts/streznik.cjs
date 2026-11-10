@@ -28,7 +28,7 @@ if (!fs.existsSync(DIST)) {
 http
   .createServer((req, res) => {
     const relativna = decodeURIComponent(req.url.split("?")[0]);
-    const pot = path.join(DIST, relativna === "/" ? "index.html" : relativna);
+    const pot = path.join(DIST, relativna.endsWith("/") ? relativna + "index.html" : relativna);
 
     // Nihče naj ne pobegne iz dist/ z ../
     if (!pot.startsWith(DIST) || !fs.existsSync(pot) || fs.statSync(pot).isDirectory()) {

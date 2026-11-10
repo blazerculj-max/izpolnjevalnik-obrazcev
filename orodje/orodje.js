@@ -40,6 +40,22 @@
   const spustisce = document.getElementById("spustisce");
   const vnosDatoteke = document.getElementById("vnos-datoteke");
 
+  // Testna različica (stran /beta/): novosti veljajo samo tam, dokler niso
+  // preizkušene. Stikalo prižge gradnja (zgradi-orodje.cjs).
+  const BETA = window.ORODJE_BETA === true;
+  let dovoliOdhod = false;
+
+  if (BETA) {
+    document
+      .querySelector("header h1")
+      .insertAdjacentHTML("beforeend", ' <span class="znacka-beta">BETA</span>');
+    window.addEventListener("beforeunload", (e) => {
+      if (dovoliOdhod || !imaVpisano()) return;
+      e.preventDefault();
+      e.returnValue = "";
+    });
+  }
+
   // ------------------------------------------------------- odpiranje datoteke
 
   vnosDatoteke.addEventListener("change", () => {
@@ -95,11 +111,24 @@
     if (f) odpriDatoteko(f);
   });
 
+  /** Ali je v odprtem obrazcu kaj, kar bi uporabnik izgubil? */
+  function imaVpisano() {
+    const obrazec = document.getElementById("obrazec-polja");
+    if (!obrazec) return false;
+    return jeIzpolnjeno([obrazec]) || podpisniPasovi.some((p) => p.slika || p.ime || p.sifra);
+  }
+
+  /** Vprašanje pred dejanjem, ki pobriše vpisano. */
+  function smemZavreci(vprasanje) {
+    return !BETA || !imaVpisano() || confirm(vprasanje);
+  }
+
   async function odpriDatoteko(datoteka) {
     if (!/\.pdf$/i.test(datoteka.name)) {
       prikaziNapako("Izberi datoteko PDF.");
       return;
     }
+    if (!smemZavreci("Odprtje drugega obrazca pobriše vse vpisano in podpise. Nadaljujem?")) return;
     odpriBajte(new Uint8Array(await datoteka.arrayBuffer()), datoteka.name);
   }
 
@@ -242,6 +271,7 @@
           nastaviZaslon("obrazec");
           return;
         }
+        if (!smemZavreci("Odprtje drugega obrazca pobriše vse vpisano in podpise. Nadaljujem?")) return;
         odpriIzKazala(b.dataset.datoteka);
       })
     );
@@ -362,6 +392,7 @@
       ) {
         return;
       }
+      dovoliOdhod = true; // že vprašano zgoraj
       location.reload();
       return;
     }
@@ -538,8 +569,21 @@
     const vIzbirah = new Set((shema.izbire || []).flatMap((i) => i.polja));
 
     const popravkiPolj = window.POSTAVITVE_OBRAZCEV
-      ? window.POSTAVITVE_OBRAZCEV.popravkiZaObrazec(ime)
+      ? window.POSTAVITVE_OBRAZCEV.popravkiZaObrazec(ime, BETA)
       : {};
+    const popravljeno = (p) => {
+      const pop = popravkiPolj[p.ime];
+      if (!pop) return p;
+      const izid = { ...p, ...pop, oznaka_iz_pdf: pop.pojasnilo ? p.oznaka_iz_pdf : null };
+      if (pop.razdeli) {
+        izid.kosi = pop.razdeli.map((n) => ({
+          ime: n,
+          dolzina: shema.polja.find((x) => x.ime === n).najvec_znakov,
+        }));
+        izid.najvec_znakov = izid.kosi.reduce((vsota, k) => vsota + k.dolzina, 0);
+      }
+      return izid;
+    };
 
     // Vrstni red določi shema (po razdelkih in stolpcih, kot si sledijo na
     // papirju) - tu ga samo upoštevamo.
@@ -554,14 +598,13 @@
             !p.vPodpisu &&
             !p.brezNapisa
         )
-        .map((p) => ({
-          vir: p,
-          html: poljeVHtml(
-            popravkiPolj[p.ime] ? { ...p, ...popravkiPolj[p.ime], oznaka_iz_pdf: null } : p
-          ),
-        })),
+        .filter((p) => !(popravkiPolj[p.ime] && popravkiPolj[p.ime].skrij))
+        .map((p) => ({ vir: p, html: poljeVHtml(popravljeno(p)) })),
       ...(shema.vrstice || []).map((v) => ({ vir: v, html: vrsticaVHtml(v) })),
-      ...(shema.izbire || []).map((i) => ({ vir: i, html: izbiraVHtml(i) })),
+      ...(shema.izbire || []).map((i) => {
+        const pop = popravkiPolj[i.polja[0]];
+        return { vir: i, html: izbiraVHtml(pop ? { ...i, oznaka: pop.oznaka } : i) };
+      }),
     ].sort((a, b) => (a.vir.zaporedje ?? 0) - (b.vir.zaporedje ?? 0));
 
     const razdelki = shema.razdelki || [];
@@ -720,8 +763,11 @@
       </div>`;
 
     document.getElementById("pripravi-pdf").addEventListener("click", pripraviPdf);
-    document.getElementById("pocisti-obrazec").addEventListener("click", pocistiVse);
+    document.getElementById("pocisti-obrazec").addEventListener("click", () => {
+      if (smemZavreci("Res želiš pobrisati vse vpisano in vse podpise?")) pocistiVse();
+    });
     povezSamoStevke();
+    povezDatume();
     povezNovIzgled();
 
     // Klik na DA/NE velja za celo vrstico; ponoven klik odgovor prekliče.
@@ -899,6 +945,7 @@
       return `<td data-oseba="${n}"${skrij(n)}><input type="text" data-ime="${escapeHtml(
         p.ime
       )}" data-tip="TextField" aria-label="${escapeHtml(opis)}"
+          ${BETA ? 'inputmode="decimal"' : ""}
           autocomplete="off" autocorrect="off" spellcheck="false"
           ${p.najvec_znakov ? `maxlength="${p.najvec_znakov}"` : ""} /></td>`;
     };
@@ -1414,10 +1461,27 @@
     const pripomba = p.pripomba
       ? `<span class="pripomba-polja">${escapeHtml(p.pripomba)}</span>`
       : "";
+    const vrsta = BETA ? vrstaVnosa(p) : {};
+    // Eno vidno polje, števke pa gredo v skrita polja okenc na obrazcu.
+    const kosi = p.kosi
+      ? p.kosi
+          .map(
+            (k) => `<input type="text" hidden data-ime="${escapeHtml(k.ime)}"
+              data-tip="TextField" data-kos="${k.dolzina}" />`
+          )
+          .join("")
+      : "";
+    const danes = vrsta.danes
+      ? `<button type="button" class="gumb-tih majhen gumb-danes"
+          data-danes="${vrsta.sestavljenDatum ? "sestavljeno" : "datum"}">Danes</button>`
+      : "";
     return `<div class="polje"><label class="oznaka-polja" for="${id}">${moznost}${oznaka}</label>
       <div class="vnos-z-enoto">
-        <input type="text" id="${id}" data-ime="${escapeHtml(p.ime)}" data-tip="TextField"
+        <input type="text" id="${id}"
+          ${p.kosi ? "data-razdeli" : `data-ime="${escapeHtml(p.ime)}" data-tip="TextField"`}
           autocomplete="off" autocorrect="off" spellcheck="false"
+          ${vrsta.inputmode ? `inputmode="${vrsta.inputmode}"` : ""}
+          ${vrsta.datum ? "data-datum" : ""}
           ${
             // Polje s samimi števkami dolžino omeji samo, po čiščenju: atribut
             // maxlength bi "0201 0025 ..." odrezal, še preden vidimo vse števke.
@@ -1426,8 +1490,94 @@
               : p.najvec_znakov
                 ? `maxlength="${p.najvec_znakov}"`
                 : ""
-          } />${enota}
-      </div>${pojasnilo}${pripomba}</div>`;
+          } />${enota}${danes}
+      </div>${kosi}${pojasnilo}${pripomba}</div>`;
+  }
+
+  /**
+   * Kakšen vnos je polje: tipkovnica, datum, gumb Danes. Polja, kjer so lahko
+   * tudi črke (tuje davčne, številka police, hišna številka), ostanejo navadna.
+   */
+  function vrstaVnosa(p) {
+    if (p.samoStevke) return {};
+    const oznaka = String(p.oznaka || "");
+    const vse = `${p.ime} ${oznaka}`;
+    if (/^kraj in datum\d?$/i.test(p.ime)) return { danes: true, sestavljenDatum: true };
+    if (
+      /datum|rojen|veljavnost|velja_(od|do)/i.test(vse) &&
+      !/matična|izključitev-\d-datum/i.test(vse)
+    ) {
+      const jeDokumentni = /^datum$/i.test(p.ime) && !/rojstv/i.test(oznaka);
+      return { datum: true, danes: jeDokumentni, inputmode: "numeric" };
+    }
+    if (/telefon|tel\.? ?štev|tel_st/i.test(vse)) return { inputmode: "tel" };
+    if (/CRS/.test(p.ime)) return {};
+    if (/davčn|davcn|DŠ\.|poštn|postna_|matičn|KZZ|starost|teža|telesna višina|zav\.? ?doba|zavarovalna doba|doba izplač/i.test(vse)) {
+      return { inputmode: "numeric" };
+    }
+    if (/€|EUR|%/.test(String(p.enota || "")) || /premij|zavarovalna vsota|znesek|delež|odstotek/i.test(oznaka)) {
+      return { inputmode: "decimal" };
+    }
+    return {};
+  }
+
+  /** Med tipkanjem: 17042020 -> 17.04.2020. Ročno vpisanih pik se ne dotika. */
+  function datumMedTipkanjem(vnos) {
+    if (!/^\d*$|^\d\d\.\d*$|^\d\d\.\d\d\.\d*$/.test(vnos)) return vnos;
+    const d = vnos.replace(/\D/g, "").slice(0, 8);
+    return d.slice(0, 2) + (d.length > 2 ? "." + d.slice(2, 4) : "") + (d.length > 4 ? "." + d.slice(4) : "");
+  }
+
+  /** Končna oblika: 1.4.2020 -> 01.04.2020; česar ne prepozna, pusti. */
+  function urejenDatum(vnos) {
+    const t = String(vnos).trim();
+    const m = t.match(/^(\d{1,2})[.\s/-]+(\d{1,2})[.\s/-]+(\d{4})\.?$/);
+    if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}.${m[3]}`;
+    return /^\d{8}$/.test(t) ? datumMedTipkanjem(t) : t;
+  }
+
+  function danasnjiDatum() {
+    const d = new Date();
+    return urejenDatum(`${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`);
+  }
+
+  function povezDatume() {
+    prikaz.querySelectorAll("[data-datum]").forEach((el) => {
+      el.addEventListener("input", () => {
+        if (el.selectionStart !== el.value.length) return;
+        const novo = datumMedTipkanjem(el.value);
+        if (novo !== el.value) el.value = novo;
+      });
+      el.addEventListener("blur", () => {
+        el.value = urejenDatum(el.value);
+      });
+    });
+    prikaz.querySelectorAll("[data-danes]").forEach((g) =>
+      g.addEventListener("click", () => {
+        const el = g.closest(".vnos-z-enoto").querySelector("input");
+        const danes = danasnjiDatum();
+        if (g.dataset.danes === "sestavljeno") {
+          // "Kraj in datum" je eno polje: kraj ostane, datum se doda.
+          const kraj = el.value.replace(/[,\s]*\d{1,2}\.\s*\d{1,2}\.\s*\d{4}\s*$/, "").trim();
+          el.value = kraj ? `${kraj}, ${danes}` : danes;
+        } else {
+          el.value = danes;
+        }
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      })
+    );
+  }
+
+  /** Števke vidnega polja razdeli v skrita polja okenc. */
+  function razdeliVOkenca(el) {
+    let ostanek = samoStevke(el.value, Number(el.dataset.samoStevke));
+    el.closest(".polje")
+      .querySelectorAll("[data-kos]")
+      .forEach((k) => {
+        const n = Number(k.dataset.kos);
+        k.value = ostanek.slice(0, n);
+        ostanek = ostanek.slice(n);
+      });
   }
 
   /** Same števke, brez začetnega "SI56" in presledkov. */
@@ -1445,7 +1595,11 @@
   function povezSamoStevke() {
     prikaz.querySelectorAll("[data-samo-stevke]").forEach((el) => {
       const najvec = Number(el.dataset.samoStevke);
+      const razdeli = () => {
+        if (el.hasAttribute("data-razdeli")) razdeliVOkenca(el);
+      };
       el.addEventListener("input", () => {
+        razdeli();
         if (JE_ZACETEK_SI56.test(el.value)) return;
         const cisto = samoStevke(el.value, najvec);
         if (cisto === el.value) return;
@@ -1455,6 +1609,7 @@
       });
       el.addEventListener("blur", () => {
         el.value = samoStevke(el.value, najvec);
+        razdeli();
       });
     });
   }
@@ -1738,6 +1893,8 @@
   async function pripraviPdf() {
     const stanje = document.getElementById("stanje-obrazca");
     const vrednosti = {};
+    // Vnos, ki še ni izgubil fokusa, je morda še v delni obliki.
+    document.querySelectorAll("#obrazec-polja [data-razdeli]").forEach(razdeliVOkenca);
     document.querySelectorAll("#obrazec-polja [data-ime]").forEach((el) => {
       // Skrit pogojni blok (npr. paketna tabela, ko je izbrana samostojna
       // izbira kritij) ne sme v PDF, tudi če je bil prej izpolnjen.
@@ -1747,7 +1904,9 @@
       } else {
         const vrednost = el.dataset.samoStevke
           ? samoStevke(el.value, Number(el.dataset.samoStevke))
-          : el.value.trim();
+          : el.hasAttribute("data-datum")
+            ? urejenDatum(el.value)
+            : el.value.trim();
         if (vrednost) vrednosti[el.dataset.ime] = vrednost;
       }
     });

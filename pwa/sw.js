@@ -8,6 +8,9 @@
 // stari različici.
 
 const RAZLICICA = "__RAZLICICA__";
+// Stran in testna stran (/beta/) si delita prostor za predpomnilnike. Vsaka
+// briše samo svoje, sicer bi ena drugi odnesla kopijo za delo brez povezave.
+const PREDPONA = "__PREDPONA__";
 // Korena ("./") namenoma ne shranjujemo posebej - to je ista (velika)
 // datoteka kot index.html in bi zasedla dvakrat toliko prostora. Odprtje
 // korena postreže index.html (obravnava fetch spodaj).
@@ -34,7 +37,13 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((imena) => Promise.all(imena.filter((i) => i !== RAZLICICA).map((i) => caches.delete(i))))
+      .then((imena) =>
+        Promise.all(
+          imena
+            .filter((i) => i !== RAZLICICA && i.startsWith(PREDPONA))
+            .map((i) => caches.delete(i))
+        )
+      )
       .then(() => self.clients.claim())
   );
 });
@@ -47,8 +56,10 @@ self.addEventListener("fetch", (e) => {
   // ob slabem signalu bi sicer čakali na iztek povezave, na Wi-Fi z vstopno
   // stranjo (hotel, bolnišnica) pa bi se namesto orodja odprla ta stran.
   // Novo različico prinese posodobitev service workerja (lučka v glavi).
+  // Samo natanko naša stran: podmapa /beta/ je druga aplikacija.
   const pot = new URL(zahteva.url).pathname;
-  if (zahteva.mode === "navigate" && (pot.endsWith("/") || pot.endsWith("/index.html"))) {
+  const koren = new URL("./", self.location).pathname;
+  if (zahteva.mode === "navigate" && (pot === koren || pot === koren + "index.html")) {
     e.respondWith(
       caches.match("./index.html").then((shranjeno) => shranjeno || fetch(zahteva))
     );

@@ -22,6 +22,7 @@ const pdfApi = require("../skupno/obrazci-pdf.js").ustvari({
 
 const KOREN = path.join(__dirname, "..");
 const ORODJE = path.join(KOREN, "public", "orodje-obrazci.html");
+const ORODJE_BETA = path.join(KOREN, "public", "orodje-obrazci-beta.html");
 const OBRAZCI = path.join(KOREN, "data", "obrazci");
 const DIST = path.join(KOREN, "dist");
 const PWA = path.join(KOREN, "pwa");
@@ -59,8 +60,33 @@ async function kazaloObrazcev() {
   return izhod;
 }
 
+/** PWA datoteke v mapo `cilj`; vrne ime predpomnilnika. */
+function objaviPwa(cilj, orodje, predpona) {
+  const razlicica =
+    (predpona === "v" ? "" : predpona) +
+    "v" +
+    crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(orodje))
+      .update(fs.readFileSync(path.join(PWA, "sw.js")))
+      .digest("hex")
+      .slice(0, 12);
+  for (const d of fs.readdirSync(PWA)) {
+    const vsebina = fs.readFileSync(path.join(PWA, d));
+    // Ime predpomnilnika veže na vsebino orodja: ob novi različici se stari
+    // predpomnilnik zavrže, sicer bi uporabnik obtičal na stari datoteki.
+    fs.writeFileSync(
+      path.join(cilj, d),
+      d === "sw.js"
+        ? String(vsebina).replace("__RAZLICICA__", razlicica).replace("__PREDPONA__", predpona)
+        : vsebina
+    );
+  }
+  return razlicica;
+}
+
 async function zgradi() {
-  if (!fs.existsSync(ORODJE)) {
+  if (!fs.existsSync(ORODJE) || !fs.existsSync(ORODJE_BETA)) {
     throw new Error("Najprej poženi `npm run orodje`.");
   }
 
@@ -76,23 +102,18 @@ async function zgradi() {
 
   // Manifest, ikone in service worker gredo v koren, da so poti v manifestu
   // preproste in da service worker pokriva celo stran.
-  const razlicica =
-    "v" +
-    crypto
-      .createHash("sha256")
-      .update(fs.readFileSync(ORODJE))
-      .update(fs.readFileSync(path.join(PWA, "sw.js")))
-      .digest("hex")
-      .slice(0, 12);
-  for (const d of fs.readdirSync(PWA)) {
-    const vsebina = fs.readFileSync(path.join(PWA, d));
-    // Ime predpomnilnika veže na vsebino orodja: ob novi različici se stari
-    // predpomnilnik zavrže, sicer bi uporabnik obtičal na stari datoteki.
-    fs.writeFileSync(
-      path.join(DIST, d),
-      d === "sw.js" ? String(vsebina).replace("__RAZLICICA__", razlicica) : vsebina
-    );
-  }
+  const razlicica = objaviPwa(DIST, ORODJE, "v");
+
+  // Testna stran je samostojna aplikacija v podmapi: svoj service worker,
+  // svoj manifest (svoja ikona na domačem zaslonu), svoj predpomnilnik.
+  const BETA_MAPA = path.join(DIST, "beta");
+  fs.mkdirSync(BETA_MAPA, { recursive: true });
+  fs.copyFileSync(ORODJE_BETA, path.join(BETA_MAPA, "index.html"));
+  objaviPwa(BETA_MAPA, ORODJE_BETA, "beta-");
+  const manifest = JSON.parse(fs.readFileSync(path.join(BETA_MAPA, "manifest.webmanifest"), "utf8"));
+  manifest.name += " BETA";
+  manifest.short_name = "Obrazci beta";
+  fs.writeFileSync(path.join(BETA_MAPA, "manifest.webmanifest"), JSON.stringify(manifest, null, 2));
 
   // Brez tega bi Pages mapo pognal skozi Jekyll in datoteke z močnimi
   // znaki v imenu bi lahko izpadle.
