@@ -98,6 +98,9 @@ function preveriPostavitev(datoteka, imena) {
       if (!neobvezno && !imena.has(ime)) manjkajo.push(`${rubrika.razdelek}: "${ime}"`);
     }
   }
+  for (const ime of Object.keys(postavitve.popravkiZaObrazec(datoteka))) {
+    if (!imena.has(ime)) manjkajo.push(`popravek polja: "${ime}"`);
+  }
   if (manjkajo.length) {
     throw new Error(
       `Postavitev za ${datoteka} navaja polja, ki jih v obrazcu ni:\n   ` +

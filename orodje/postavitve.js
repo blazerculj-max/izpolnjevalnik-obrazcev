@@ -145,9 +145,31 @@
     ],
   };
 
+  // Popravki posameznih polj samodejne postavitve (po imenih iz PDF-ja).
+  // samoStevke: polje sprejme le števke, do omejitve iz PDF-ja; presledki in
+  // začetni "SI56" ne porabijo mest.
+  const SPREMEMBA = "Sprememba-podatkov-zdravstvenih-zavarovanj.pdf";
+  const popravkiPolj = {
+    [SPREMEMBA]: {
+      TRR: {
+        oznaka: "TRR za E-račun v spletno banko (SI56 + 15 številk)",
+        samoStevke: true,
+      },
+      "TRR 2": {
+        oznaka: "TRR za direktno obremenitev SDD (SI56 + 15 številk)",
+        samoStevke: true,
+      },
+    },
+  };
+
   /** Rubrike z ročno postavitvijo za dani obrazec (po imenu datoteke). */
   function zaObrazec(datoteka) {
     return obrazci[String(datoteka || "")] || [];
+  }
+
+  /** Popravki polj za dani obrazec: { imePolja: { oznaka, samoStevke } }. */
+  function popravkiZaObrazec(datoteka) {
+    return popravkiPolj[String(datoteka || "")] || {};
   }
 
   /** Celice ene osebe, razgrnjene v konkretna imena polj. */
@@ -181,5 +203,5 @@
     return izhod;
   }
 
-  return { zaObrazec, imenaPolj, vrsticeOsebe, obrazci };
+  return { zaObrazec, popravkiZaObrazec, imenaPolj, vrsticeOsebe, obrazci };
 });

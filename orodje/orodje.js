@@ -537,6 +537,10 @@
     // Polja, ki so del izbire, ne prikazujemo posebej - izbira jih pokrije.
     const vIzbirah = new Set((shema.izbire || []).flatMap((i) => i.polja));
 
+    const popravkiPolj = window.POSTAVITVE_OBRAZCEV
+      ? window.POSTAVITVE_OBRAZCEV.popravkiZaObrazec(ime)
+      : {};
+
     // Vrstni red določi shema (po razdelkih in stolpcih, kot si sledijo na
     // papirju) - tu ga samo upoštevamo.
     const elementi = [
@@ -550,7 +554,12 @@
             !p.vPodpisu &&
             !p.brezNapisa
         )
-        .map((p) => ({ vir: p, html: poljeVHtml(p) })),
+        .map((p) => ({
+          vir: p,
+          html: poljeVHtml(
+            popravkiPolj[p.ime] ? { ...p, ...popravkiPolj[p.ime], oznaka_iz_pdf: null } : p
+          ),
+        })),
       ...(shema.vrstice || []).map((v) => ({ vir: v, html: vrsticaVHtml(v) })),
       ...(shema.izbire || []).map((i) => ({ vir: i, html: izbiraVHtml(i) })),
     ].sort((a, b) => (a.vir.zaporedje ?? 0) - (b.vir.zaporedje ?? 0));
@@ -712,6 +721,7 @@
 
     document.getElementById("pripravi-pdf").addEventListener("click", pripraviPdf);
     document.getElementById("pocisti-obrazec").addEventListener("click", pocistiVse);
+    povezSamoStevke();
     povezNovIzgled();
 
     // Klik na DA/NE velja za celo vrstico; ponoven klik odgovor prekliče.
@@ -1408,8 +1418,45 @@
       <div class="vnos-z-enoto">
         <input type="text" id="${id}" data-ime="${escapeHtml(p.ime)}" data-tip="TextField"
           autocomplete="off" autocorrect="off" spellcheck="false"
-          ${p.najvec_znakov ? `maxlength="${p.najvec_znakov}"` : ""} />${enota}
+          ${
+            // Polje s samimi števkami dolžino omeji samo, po čiščenju: atribut
+            // maxlength bi "0201 0025 ..." odrezal, še preden vidimo vse števke.
+            p.samoStevke
+              ? `inputmode="numeric" data-samo-stevke="${p.najvec_znakov}"`
+              : p.najvec_znakov
+                ? `maxlength="${p.najvec_znakov}"`
+                : ""
+          } />${enota}
       </div>${pojasnilo}${pripomba}</div>`;
+  }
+
+  /** Same števke, brez začetnega "SI56" in presledkov. */
+  function samoStevke(vnos, najvec) {
+    return String(vnos)
+      .replace(/^\s*SI\s*56/i, "")
+      .replace(/\D/g, "")
+      .slice(0, najvec);
+  }
+
+  // Delno vtipkan začetek SI56: če bi črki sproti brisali, bi 5 in 6 ostali
+  // kot prvi števki računa.
+  const JE_ZACETEK_SI56 = /^\s*S(I\s*5?)?\s*$/i;
+
+  function povezSamoStevke() {
+    prikaz.querySelectorAll("[data-samo-stevke]").forEach((el) => {
+      const najvec = Number(el.dataset.samoStevke);
+      el.addEventListener("input", () => {
+        if (JE_ZACETEK_SI56.test(el.value)) return;
+        const cisto = samoStevke(el.value, najvec);
+        if (cisto === el.value) return;
+        const pred = samoStevke(el.value.slice(0, el.selectionStart), najvec);
+        el.value = cisto;
+        el.setSelectionRange(pred.length, pred.length);
+      });
+      el.addEventListener("blur", () => {
+        el.value = samoStevke(el.value, najvec);
+      });
+    });
   }
 
   /**
@@ -1697,8 +1744,11 @@
       if (el.closest("[data-pogoj-izbira][hidden]")) return;
       if (el.dataset.tip === "CheckBox") {
         if (el.checked) vrednosti[el.dataset.ime] = true;
-      } else if (el.value.trim()) {
-        vrednosti[el.dataset.ime] = el.value.trim();
+      } else {
+        const vrednost = el.dataset.samoStevke
+          ? samoStevke(el.value, Number(el.dataset.samoStevke))
+          : el.value.trim();
+        if (vrednost) vrednosti[el.dataset.ime] = vrednost;
       }
     });
 
