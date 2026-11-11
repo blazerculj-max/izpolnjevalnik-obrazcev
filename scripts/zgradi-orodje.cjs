@@ -180,6 +180,7 @@ async function zgradi() {
         'name="apple-mobile-web-app-title" content="Obrazci"',
         'name="apple-mobile-web-app-title" content="Obrazci beta"'
       )
+      .replace('download="Izpolnjevalnik-obrazcev.html"', 'download="Izpolnjevalnik-obrazcev-BETA.html"')
   );
 
   const mb = (fs.statSync(IZHOD).size / 1048576).toFixed(1);

@@ -428,6 +428,29 @@
     prenesiEl.classList.remove("skrit");
   }
 
+  // Prehod med glavno in testno stranjo. Na spletu (in v nameščeni
+  // aplikaciji) relativno, da ostane v istem oknu; prenesena datoteka
+  // (file://) pa mora na objavljeni naslov.
+  const OBJAVLJENA_STRAN = "https://blazerculj-max.github.io/izpolnjevalnik-obrazcev/";
+  const preklopEl = document.getElementById("preklop-strani");
+  if (preklopEl) {
+    const naSpletu = /^https?:$/.test(location.protocol);
+    preklopEl.href = BETA
+      ? naSpletu ? "../" : OBJAVLJENA_STRAN
+      : naSpletu ? "beta/" : OBJAVLJENA_STRAN + "beta/";
+    const besedilo = BETA ? "Na glavno stran" : "Preizkusi beto";
+    preklopEl.textContent = besedilo;
+    const vMeniju = document.getElementById("preklop-strani-meni");
+    if (vMeniju) vMeniju.textContent = besedilo;
+    preklopEl.addEventListener("click", (e) => {
+      if (imaVpisano() && !confirm("Ob prehodu na drugo stran se vpisano izgubi. Nadaljujem?")) {
+        e.preventDefault();
+        return;
+      }
+      dovoliOdhod = true;
+    });
+  }
+
   // Ob zapiranju strani za sabo ne pustimo blob naslovov s podatki stranke.
   window.addEventListener("pagehide", sprostiBlobe);
 

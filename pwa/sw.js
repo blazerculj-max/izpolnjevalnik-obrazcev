@@ -70,7 +70,18 @@ self.addEventListener("fetch", (e) => {
     caches.match(zahteva, { ignoreSearch: true }).then((zadetek) => {
       if (zadetek) return zadetek;
       return fetch(zahteva).catch(() => {
-        // Brez povezave naj se vsaka pot odpre v orodju samem.
+        // Brez povezave naj se vsaka pot odpre v orodju samem - razen testne
+        // strani, ki je na napravi še ni: namesto nje ne podtaknemo glavne.
+        if (zahteva.mode === "navigate" && pot.startsWith(koren + "beta/")) {
+          return new Response(
+            '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +
+              '<div style="font:16px -apple-system,sans-serif;padding:24px;max-width:520px">' +
+              "<p>Testna stran (beta) na tej napravi še ni shranjena za delo brez povezave. " +
+              "Odpri jo enkrat, ko imaš internet.</p>" +
+              '<p><a href="../">Nazaj na glavno stran</a></p></div>',
+            { headers: { "Content-Type": "text/html; charset=utf-8" } }
+          );
+        }
         if (zahteva.mode === "navigate") return caches.match("./index.html");
         throw new Error("ni v predpomnilniku");
       });

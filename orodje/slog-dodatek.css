@@ -211,7 +211,8 @@ body:not(.izgled-nov) .samo-nov { display: none !important; }
 .izgled-nov .glava-gumbi { gap: 6px; align-items: center; flex-wrap: nowrap; }
 .izgled-nov .glava-gumbi .gumb-tih { padding: 6px 10px; font-size: 13px; }
 .izgled-nov #prenesi-orodje,
-.izgled-nov #izberi-datoteko { display: none !important; }
+.izgled-nov #izberi-datoteko,
+.izgled-nov #preklop-strani { display: none !important; }
 @media (max-width: 600px) {
   .izgled-nov #stanje-razlicice-besedilo { display: none; }
 }
